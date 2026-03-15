@@ -484,6 +484,7 @@ input[type="file"] { display: none; }
     if (!_currentUser) return;
     const esistente = await localforage.getItem('mazzo_custom') || [];
     if (esistente.length > 0) return;
+    window._firebaseRipristinoPromise = (async () => {
     try {
       const snap = await getDoc(doc(db, 'users', _currentUser.uid, 'backup', 'mazzo'));
       if (snap.exists()) {
@@ -495,6 +496,7 @@ input[type="file"] { display: none; }
         }
       }
     } catch { /* silenzioso */ }
+    })();
   }
 
   // ── COMMUNITY ──
@@ -950,6 +952,13 @@ input[type="file"] { display: none; }
   async function tentaRipristinoAutomatico() {
     const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
     if (mazzo.length > 0) return;
+    // aspetta che Firebase completi il ripristino cloud
+    if (window._firebaseRipristinoPromise) {
+      await window._firebaseRipristinoPromise;
+    }
+    const mazzoDopoCloud = await localforage.getItem(CUSTOM_KEY) || [];
+    if (mazzoDopoCloud.length > 0) return;
+    // se ancora vuoto, chiedi JSON locale
     const ok = await customConfirm({
       message: 'Il mazzo è vuoto.\nVuoi importare un backup JSON?',
       okText: 'SI', cancelText: 'NO'
