@@ -894,7 +894,7 @@ input[type="file"] { display: none; }
     if (!mazzo.length) { await customAlert('Il mazzo è vuoto, niente da salvare.'); return; }
     const json = JSON.stringify(mazzo, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
-    const filename = 'mazzo_custom_backup_' + new Date().toISOString().slice(0, 10) + '.json';
+    const filename = 'mazzo_custom_backup.json';
 
     if (_cartellaHandle) {
       try {
