@@ -555,6 +555,15 @@ input[type="file"] { display: none; }
       btnLike.onclick = () => likeCarta(carta.id);
       btns.appendChild(btnImport);
       btns.appendChild(btnLike);
+      if (_currentUser && _currentUser.uid === '6PF8IUUL2IZLXj8v82yHM133vvg2') {
+        const btnDel = document.createElement('button');
+        btnDel.className = 'c-like';
+        btnDel.style.background = '#d64040';
+        btnDel.textContent = '🗑';
+        btnDel.title = 'Elimina carta (admin)';
+        btnDel.onclick = () => eliminaCartaCommunity(carta.id);
+        btns.appendChild(btnDel);
+      }
       wrap.appendChild(img);
       wrap.appendChild(testo);
       wrap.appendChild(likes);
