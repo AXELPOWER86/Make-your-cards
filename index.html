@@ -996,6 +996,7 @@ input[type="file"] { display: none; }
     mazzo.splice(idx, 1);
     await localforage.setItem(CUSTOM_KEY, mazzo);
     await aggiornaListaCustom();
+    if (window.backupCloud) await window.backupCloud(mazzo);
   }
 
   // ── CANCELLA TUTTO ──
@@ -1003,6 +1004,7 @@ input[type="file"] { display: none; }
     if (!await customConfirm({ message: 'Cancellare tutto il mazzo personalizzato?', okText: 'SI', cancelText: 'NO' })) return;
     await localforage.removeItem(CUSTOM_KEY);
     await aggiornaListaCustom();
+    if (window.backupCloud) await window.backupCloud([]);
   }
 
   // ── AGGIORNA LISTA ──
