@@ -876,7 +876,6 @@ input[type="file"] { display: none; }
       // backup cloud automatico
       if (window.backupCloud) await window.backupCloud(mazzoFinale);
 
-      await salvaFile(injectedDataUrl, nome);
       await esportaBackup();
       resetAll();
 
