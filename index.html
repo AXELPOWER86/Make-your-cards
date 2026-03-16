@@ -878,10 +878,9 @@ input[type="file"] { display: none; }
 
       // backup cloud automatico
       if (window.backupCloud) await window.backupCloud(mazzoFinale);
+      _mazzoHashSalvato = await calcolaMazzoHash(mazzoFinale);
 
-      window.addEventListener('beforeunload', async () => {
-        await esportaBackup();
-      });
+      await customAlert('Carta salvata nel mazzo!');
       resetAll();
 
     } catch(e) {
@@ -893,9 +892,26 @@ input[type="file"] { display: none; }
   }
 
   // ── BACKUP JSON ──
-  async function esportaBackup() {
+  let _mazzoHashSalvato = null;
+
+  async function calcolaMazzoHash(mazzo) {
+    const str = JSON.stringify(mazzo.map(c => c.shash).sort());
+    const buf = new TextEncoder().encode(str);
+    const digest = await crypto.subtle.digest('SHA-256', buf);
+    return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2,'0')).join('');
+  }
+
+  async function esportaBackup({ silenzioso = false } = {}) {
     const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
-    if (!mazzo.length) { await customAlert('Il mazzo è vuoto, niente da salvare.'); return; }
+    if (!mazzo.length) {
+      if (!silenzioso) await customAlert('Il mazzo è vuoto, niente da salvare.');
+      return;
+    }
+
+    // se silenzioso e mazzo non cambiato, non fare nulla
+    const hashAttuale = await calcolaMazzoHash(mazzo);
+    if (silenzioso && hashAttuale === _mazzoHashSalvato) return;
+
     const json = JSON.stringify(mazzo, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
     const filename = 'mazzo_custom_backup.json';
@@ -906,16 +922,21 @@ input[type="file"] { display: none; }
         const writable = await fileHandle.createWritable();
         await writable.write(blob);
         await writable.close();
-        return; // silenzioso
+        _mazzoHashSalvato = hashAttuale;
+        return;
       } catch { /* fallback */ }
     }
 
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    link.click();
-    URL.revokeObjectURL(url);
+    // fallback download — solo se non silenzioso
+    if (!silenzioso) {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(url);
+      _mazzoHashSalvato = hashAttuale;
+    }
   }
 
   async function importaBackup(event) {
@@ -997,6 +1018,7 @@ input[type="file"] { display: none; }
     await localforage.setItem(CUSTOM_KEY, mazzo);
     await aggiornaListaCustom();
     if (window.backupCloud) await window.backupCloud(mazzo);
+    _mazzoHashSalvato = await calcolaMazzoHash(mazzo);
   }
 
   // ── CANCELLA TUTTO ──
@@ -1005,6 +1027,7 @@ input[type="file"] { display: none; }
     await localforage.removeItem(CUSTOM_KEY);
     await aggiornaListaCustom();
     if (window.backupCloud) await window.backupCloud([]);
+    _mazzoHashSalvato = await calcolaMazzoHash([]);
   }
 
   // ── AGGIORNA LISTA ──
@@ -1051,9 +1074,24 @@ input[type="file"] { display: none; }
   }
 
   window.aggiornaListaCustom = aggiornaListaCustom;
-  window.addEventListener('beforeunload', () => {
-    esportaBackup();
+  // ── BEFOREUNLOAD: chiedi conferma backup se mazzo modificato ──
+  window.addEventListener('beforeunload', (e) => {
+    // nota: beforeunload non supporta async né custom modal
+    // possiamo solo bloccare con il dialog nativo del browser
+    // il salvataggio silenzioso avviene su pagehide
+    const mazzo = localforage.getItem(CUSTOM_KEY);
+    // non possiamo await qui, usiamo pagehide per il salvataggio
+    e.preventDefault();
+    e.returnValue = 'Vuoi salvare il backup del mazzo prima di uscire?';
   });
+
+  window.addEventListener('pagehide', () => {
+    localforage.getItem(CUSTOM_KEY).then(mazzo => {
+      if (!mazzo || !mazzo.length) return;
+      esportaBackup({ silenzioso: true });
+    });
+  });
+
   window.addEventListener('resize', autoFit);
 </script>
 
