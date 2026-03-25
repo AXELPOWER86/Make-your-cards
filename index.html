@@ -301,7 +301,7 @@ input[type="file"] { display: none; }
     <span>🃏 Mazzo personalizzato</span>
     <span class="mazzo-count"><span id="contatore-custom">0</span> carte</span>
     <button class="btn-cancella-tutto" onclick="cancellaTuttoMazzo()">🗑 Cancella tutto</button>
-    <button class="btn-cancella-tutto" style="background:linear-gradient(145deg,#2ecc71,#1a8a47); margin-left:0;" onclick="esportaBackup()">💾 Backup JSON</button>
+    <button class="btn-cancella-tutto" style="background:linear-gradient(145deg,#2ecc71,#1a8a47); margin-left:0;" onclick="esportaBackup()">💾 Backup Mazzo</button>
     <button class="btn-cancella-tutto" style="background:linear-gradient(145deg,#3498db,#1a5a8a); margin-left:0;" onclick="document.getElementById('inp-backup').click()">📂 Importa backup</button>
     <input type="file" id="inp-backup" accept=".json" onchange="importaBackup(event)">
   </div>
@@ -563,6 +563,15 @@ input[type="file"] { display: none; }
       btnLike.onclick = () => likeCarta(carta.id);
       btns.appendChild(btnImport);
       btns.appendChild(btnLike);
+      if (_currentUser && _currentUser.uid === '6PF8IUUL2IZLXj8v82yHM133vvg2') {
+        const btnDel = document.createElement('button');
+        btnDel.className = 'c-like';
+        btnDel.style.background = '#d64040';
+        btnDel.textContent = '🗑';
+        btnDel.title = 'Elimina carta (admin)';
+        btnDel.onclick = () => eliminaCartaCommunity(carta.id);
+        btns.appendChild(btnDel);
+      }
       wrap.appendChild(img);
       wrap.appendChild(testo);
       wrap.appendChild(likes);
@@ -600,6 +609,18 @@ input[type="file"] { display: none; }
       }
     } catch(e) {
       await customAlert('Errore like:\n' + e.message);
+    }
+  }
+
+  async function eliminaCartaCommunity(id) {
+    if (!await customConfirm({ message: 'Eliminare questa carta dalla community?', okText: 'SI', cancelText: 'NO' })) return;
+    try {
+      const { deleteDoc, doc: fbDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+      await deleteDoc(fbDoc(db, 'community', id));
+      _communityCards = _communityCards.filter(c => c.id !== id);
+      renderCommunity(_communityCards);
+    } catch(e) {
+      await customAlert('Errore eliminazione:\n' + e.message);
     }
   }
 
@@ -876,7 +897,7 @@ function autoFit() {
     }
   }
 
-  // ── BACKUP JSON ──
+  // ── Backup Mazzo ──
   async function esportaBackup() {
     const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
     if (!mazzo.length) { await customAlert('Il mazzo è vuoto, niente da salvare.'); return; }
@@ -940,25 +961,36 @@ function autoFit() {
     const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
     if (mazzo.length > 0) return;
     const ok = await customConfirm({
-      message: 'Il mazzo è vuoto.\nVuoi importare un backup JSON?',
+      message: 'Il mazzo è vuoto.\nVuoi importare un Backup Mazzo?',
       okText: 'SI', cancelText: 'NO'
     });
     if (ok) document.getElementById('inp-backup').click();
   }
 
   // ── MODIFICA CARTA ──
-  async function modificaCarta(idx) {
-    const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
-    const inModificaIdx = mazzo.findIndex(c => c._inModifica);
-    if (inModificaIdx !== -1) delete mazzo[inModificaIdx]._inModifica;
-    const carta = mazzo[idx];
-    if (!carta) return;
-    carta._inModifica = true;
+async function modificaCarta(idx) {
+  const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
+  const carta = mazzo[idx];
+  if (!carta) return;
+
+  // se già in modifica → deseleziona
+  if (carta._inModifica) {
+    delete carta._inModifica;
     await localforage.setItem(CUSTOM_KEY, mazzo);
-    document.getElementById('inp-body').value = carta.testo || '';
-    updateCard();
     await aggiornaListaCustom();
+    resetAll();
+    return;
   }
+
+  // altrimenti → metti in modifica
+  const inModificaIdx = mazzo.findIndex(c => c._inModifica);
+  if (inModificaIdx !== -1) delete mazzo[inModificaIdx]._inModifica;
+  carta._inModifica = true;
+  await localforage.setItem(CUSTOM_KEY, mazzo);
+  document.getElementById('inp-body').value = carta.testo || '';
+  updateCard();
+  await aggiornaListaCustom();
+}
 
   // ── ELIMINA CARTA ──
   async function eliminaCarta(idx) {
