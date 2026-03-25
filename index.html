@@ -161,10 +161,20 @@ button {
   text-align: center; width: 100%; flex: 1; display: flex;
   align-items: center; justify-content: center; overflow: hidden; padding: 0 4px;
 }
+
 #card-body-inner {
-  font-family: 'Carlito', Arial, sans-serif; font-weight: 900; color: #f5e6c8;
-  text-align: center; line-height: 1.15; word-break: normal; overflow-wrap: normal;
-  white-space: pre-wrap; text-shadow: 0 1px 4px rgba(0,0,0,0.5); display: block; width: 100%;
+  font-family: 'Carlito', Arial, sans-serif;
+  font-weight: 900;
+  color: #f5e6c8;
+  text-align: center;
+  line-height: 1.15;
+  word-break: break-word;        /* era: normal */
+  overflow-wrap: break-word;     /* era: normal */
+  white-space: pre-wrap;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.5);
+  display: block;
+  width: 100%;
+  max-width: 100%;               /* aggiunto */
 }
 
 /* MAZZO SECTION */
@@ -651,21 +661,22 @@ input[type="file"] { display: none; }
 }
 
 function autoFit() {
-    const inner = document.getElementById('card-body-inner');
-    const body  = document.getElementById('card-body');
-    if (!inner.textContent.trim()) return;
-    const maxH = body.clientHeight;
-    const maxW = body.clientWidth - 8;
-    let lo = 8, hi = 300, best = 8;
-    while (lo <= hi) {
-      const mid = Math.floor((lo + hi) / 2);
-      inner.style.fontSize = mid + 'px';
-      void inner.offsetHeight;
-      if (inner.scrollHeight <= maxH && inner.scrollWidth <= maxW) { best = mid; lo = mid + 1; }
-      else { hi = mid - 1; }
-    }
-    inner.style.fontSize = best + 'px';
+  const inner = document.getElementById('card-body-inner');
+  const body  = document.getElementById('card-body');
+  if (!inner.textContent.trim()) return;
+  const maxH = body.clientHeight;
+  const maxW = body.clientWidth - 4;  // era -8, ora -4 per dare meno margine
+  let lo = 8, hi = 300, best = 8;
+  while (lo <= hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    inner.style.fontSize = mid + 'px';
+    void inner.offsetHeight;
+    if (inner.scrollHeight <= maxH && inner.scrollWidth <= maxW + 4) { // tolleranza +4px su scrollWidth
+      best = mid; lo = mid + 1;
+    } else { hi = mid - 1; }
   }
+  inner.style.fontSize = best + 'px';
+}
 
   function resetAll() {
     document.getElementById('inp-body').value = '';
