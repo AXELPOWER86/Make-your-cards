@@ -934,7 +934,7 @@ function autoFit() {
       const esistente = await localforage.getItem(CUSTOM_KEY) || [];
       if (esistente.length > 0) {
         const scelta = await customConfirm({
-          message: 'Vuoi sostituire il mazzo attuale o unire le carte?\n(SI = sostituisci, NO = unisci)',
+          message: 'Vuoi sostituire il mazzo attuale o unire le carte?\n(Rosso = sostituisci, Oro = unisci)',
           okText: 'Sostituisci', cancelText: 'Unisci'
         });
         if (scelta) {
