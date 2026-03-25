@@ -645,32 +645,27 @@ input[type="file"] { display: none; }
 
   // ── CARD UI ──
   function updateCard() {
-    const raw = document.getElementById('inp-body').value;
-    document.getElementById('card-body-inner').textContent = raw.toUpperCase();
-    autoFit();
-  }
+  const raw = document.getElementById('inp-body').value;
+  document.getElementById('card-body-inner').textContent = raw.toUpperCase();
+  document.fonts.ready.then(() => autoFit());
+}
 
 function autoFit() {
-  const inner = document.getElementById('card-body-inner');
-  const body  = document.getElementById('card-body');
-  if (!inner.textContent.trim()) return;
-  const maxH = body.clientHeight;
-  const maxW = body.clientWidth - 8;
-  let lo = 8, hi = 300, best = 8;
-  while (lo <= hi) {
-    const mid = Math.floor((lo + hi) / 2);
-    inner.style.fontSize = mid + 'px';
-    void inner.offsetHeight; // forza reflow
-    const rect = inner.getBoundingClientRect();
-    if (rect.height <= maxH && rect.width <= maxW) {
-      best = mid;
-      lo = mid + 1;
-    } else {
-      hi = mid - 1;
+    const inner = document.getElementById('card-body-inner');
+    const body  = document.getElementById('card-body');
+    if (!inner.textContent.trim()) return;
+    const maxH = body.clientHeight;
+    const maxW = body.clientWidth - 8;
+    let lo = 8, hi = 300, best = 8;
+    while (lo <= hi) {
+      const mid = Math.floor((lo + hi) / 2);
+      inner.style.fontSize = mid + 'px';
+      void inner.offsetHeight;
+      if (inner.scrollHeight <= maxH && inner.scrollWidth <= maxW) { best = mid; lo = mid + 1; }
+      else { hi = mid - 1; }
     }
+    inner.style.fontSize = best + 'px';
   }
-  inner.style.fontSize = best + 'px';
-}
 
   function resetAll() {
     document.getElementById('inp-body').value = '';
@@ -1021,7 +1016,7 @@ function autoFit() {
   }
 
   window.aggiornaListaCustom = aggiornaListaCustom;
-  window.addEventListener('resize', autoFit);
+  window.addEventListener('resize', () => document.fonts.ready.then(() => autoFit()));
 </script>
 
 </body>
