@@ -201,7 +201,7 @@ input[type="file"] { display: none; }
 /* MODALE COMMUNITY */
 #communityOverlay {
   position: fixed; inset: 0; background: rgba(0,0,0,.7);
-  display: none; align-items: center; justify-content: center; z-index: 200;
+  display: none; align-items: center; justify-content: center; z-index: 20000;
 }
 #communityBox {
   background: #f9e0a7; border: 4px solid #502369; border-radius: 14px;
@@ -315,7 +315,7 @@ input[type="file"] { display: none; }
 <!-- MODALE GENERICA -->
 <div id="modalOverlay" style="
   position:fixed;inset:0;background:rgba(0,0,0,.6);
-  display:none;align-items:center;justify-content:center;z-index:300;
+  display:none;align-items:center;justify-content:center;z-index:10000;
 ">
   <div style="
     background:#f9e0a7;border:4px solid #502369;border-radius:14px;
@@ -417,7 +417,6 @@ input[type="file"] { display: none; }
     from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
   const firebaseConfig = {
-    // firebase-config: public-key
     apiKey: "AIzaSyAuZHO-xS2IJKETIUpn8UF9vF898WZflJ4",
     authDomain: "community-carte-porky-s-game.firebaseapp.com",
     projectId: "community-carte-porky-s-game",
@@ -434,28 +433,25 @@ input[type="file"] { display: none; }
   let _communityCards = [];
 
   // ── AUTH STATE ──
-  // Esponi una promise che si risolve quando Firebase ha determinato lo stato auth
-  window._firebaseRipristinoPromise = new Promise(resolve => {
-    onAuthStateChanged(auth, async user => {
-      _currentUser = user;
-      const loginInfo  = document.getElementById('login-info');
-      const btnLogin   = document.getElementById('btn-login');
-      const btnLogout  = document.getElementById('btn-logout');
-      const btnCom     = document.getElementById('btn-community');
-      if (user) {
-        loginInfo.innerHTML = (user.photoURL ? `<img src="${user.photoURL}" alt="">` : '') + ' ' + (user.displayName || user.email);
-        btnLogin.style.display  = 'none';
-        btnLogout.style.display = 'inline-block';
-        btnCom.style.display    = 'inline-block';
-        await sincronizzaDaCloud();
-      } else {
-        loginInfo.textContent   = 'Non connesso';
-        btnLogin.style.display  = 'inline-block';
-        btnLogout.style.display = 'none';
-        btnCom.style.display    = 'none';
-      }
-      resolve(); // segnala che Firebase ha finito, loggato o no
-    });
+  onAuthStateChanged(auth, async user => {
+    _currentUser = user;
+    const loginInfo  = document.getElementById('login-info');
+    const btnLogin   = document.getElementById('btn-login');
+    const btnLogout  = document.getElementById('btn-logout');
+    const btnCom     = document.getElementById('btn-community');
+    if (user) {
+      loginInfo.innerHTML = (user.photoURL ? `<img src="${user.photoURL}" alt="">` : '') + ' ' + (user.displayName || user.email);
+      btnLogin.style.display  = 'none';
+      btnLogout.style.display = 'inline-block';
+      btnCom.style.display    = 'inline-block';
+      // ripristina mazzo dal cloud se localforage è vuoto
+      await sincronizzaDaCloud();
+    } else {
+      loginInfo.textContent   = 'Non connesso';
+      btnLogin.style.display  = 'inline-block';
+      btnLogout.style.display = 'none';
+      btnCom.style.display    = 'none';
+    }
   });
 
   // ── LOGIN / LOGOUT ──
@@ -558,15 +554,6 @@ input[type="file"] { display: none; }
       btnLike.onclick = () => likeCarta(carta.id);
       btns.appendChild(btnImport);
       btns.appendChild(btnLike);
-      if (_currentUser && _currentUser.uid === '6PF8IUUL2IZLXj8v82yHM133vvg2') {
-        const btnDel = document.createElement('button');
-        btnDel.className = 'c-like';
-        btnDel.style.background = '#d64040';
-        btnDel.textContent = '🗑';
-        btnDel.title = 'Elimina carta (admin)';
-        btnDel.onclick = () => eliminaCartaCommunity(carta.id);
-        btns.appendChild(btnDel);
-      }
       wrap.appendChild(img);
       wrap.appendChild(testo);
       wrap.appendChild(likes);
@@ -604,18 +591,6 @@ input[type="file"] { display: none; }
       }
     } catch(e) {
       await customAlert('Errore like:\n' + e.message);
-    }
-  }
-
-  async function eliminaCartaCommunity(id) {
-    if (!await customConfirm({ message: 'Eliminare questa carta dalla community?', okText: 'SI', cancelText: 'NO' })) return;
-    try {
-      const { deleteDoc, doc: fbDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
-      await deleteDoc(fbDoc(db, 'community', id));
-      _communityCards = _communityCards.filter(c => c.id !== id);
-      renderCommunity(_communityCards);
-    } catch(e) {
-      await customAlert('Errore eliminazione:\n' + e.message);
     }
   }
 
@@ -878,9 +853,9 @@ input[type="file"] { display: none; }
 
       // backup cloud automatico
       if (window.backupCloud) await window.backupCloud(mazzoFinale);
-      _mazzoHashSalvato = await calcolaMazzoHash(mazzoFinale);
 
-      await customAlert('Carta salvata nel mazzo!');
+      await salvaFile(injectedDataUrl, nome);
+      await esportaBackup();
       resetAll();
 
     } catch(e) {
@@ -892,29 +867,12 @@ input[type="file"] { display: none; }
   }
 
   // ── BACKUP JSON ──
-  let _mazzoHashSalvato = null;
-
-  async function calcolaMazzoHash(mazzo) {
-    const str = JSON.stringify(mazzo.map(c => c.shash).sort());
-    const buf = new TextEncoder().encode(str);
-    const digest = await crypto.subtle.digest('SHA-256', buf);
-    return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2,'0')).join('');
-  }
-
-  async function esportaBackup({ silenzioso = false } = {}) {
+  async function esportaBackup() {
     const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
-    if (!mazzo.length) {
-      if (!silenzioso) await customAlert('Il mazzo è vuoto, niente da salvare.');
-      return;
-    }
-
-    // se silenzioso e mazzo non cambiato, non fare nulla
-    const hashAttuale = await calcolaMazzoHash(mazzo);
-    if (silenzioso && hashAttuale === _mazzoHashSalvato) return;
-
+    if (!mazzo.length) { await customAlert('Il mazzo è vuoto, niente da salvare.'); return; }
     const json = JSON.stringify(mazzo, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
-    const filename = 'mazzo_custom_backup.json';
+    const filename = 'mazzo_custom_backup_' + new Date().toISOString().slice(0, 10) + '.json';
 
     if (_cartellaHandle) {
       try {
@@ -922,21 +880,16 @@ input[type="file"] { display: none; }
         const writable = await fileHandle.createWritable();
         await writable.write(blob);
         await writable.close();
-        _mazzoHashSalvato = hashAttuale;
-        return;
+        return; // silenzioso
       } catch { /* fallback */ }
     }
 
-    // fallback download — solo se non silenzioso
-    if (!silenzioso) {
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = filename;
-      link.click();
-      URL.revokeObjectURL(url);
-      _mazzoHashSalvato = hashAttuale;
-    }
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
   }
 
   async function importaBackup(event) {
@@ -976,13 +929,6 @@ input[type="file"] { display: none; }
   async function tentaRipristinoAutomatico() {
     const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
     if (mazzo.length > 0) return;
-    // aspetta che Firebase completi il ripristino cloud
-    if (window._firebaseRipristinoPromise) {
-      await window._firebaseRipristinoPromise;
-    }
-    const mazzoDopoCloud = await localforage.getItem(CUSTOM_KEY) || [];
-    if (mazzoDopoCloud.length > 0) return;
-    // se ancora vuoto, chiedi JSON locale
     const ok = await customConfirm({
       message: 'Il mazzo è vuoto.\nVuoi importare un backup JSON?',
       okText: 'SI', cancelText: 'NO'
@@ -1017,8 +963,6 @@ input[type="file"] { display: none; }
     mazzo.splice(idx, 1);
     await localforage.setItem(CUSTOM_KEY, mazzo);
     await aggiornaListaCustom();
-    if (window.backupCloud) await window.backupCloud(mazzo);
-    _mazzoHashSalvato = await calcolaMazzoHash(mazzo);
   }
 
   // ── CANCELLA TUTTO ──
@@ -1026,8 +970,6 @@ input[type="file"] { display: none; }
     if (!await customConfirm({ message: 'Cancellare tutto il mazzo personalizzato?', okText: 'SI', cancelText: 'NO' })) return;
     await localforage.removeItem(CUSTOM_KEY);
     await aggiornaListaCustom();
-    if (window.backupCloud) await window.backupCloud([]);
-    _mazzoHashSalvato = await calcolaMazzoHash([]);
   }
 
   // ── AGGIORNA LISTA ──
@@ -1074,24 +1016,6 @@ input[type="file"] { display: none; }
   }
 
   window.aggiornaListaCustom = aggiornaListaCustom;
-  // ── BEFOREUNLOAD: chiedi conferma backup se mazzo modificato ──
-  window.addEventListener('beforeunload', (e) => {
-    // nota: beforeunload non supporta async né custom modal
-    // possiamo solo bloccare con il dialog nativo del browser
-    // il salvataggio silenzioso avviene su pagehide
-    const mazzo = localforage.getItem(CUSTOM_KEY);
-    // non possiamo await qui, usiamo pagehide per il salvataggio
-    e.preventDefault();
-    e.returnValue = 'Vuoi salvare il backup del mazzo prima di uscire?';
-  });
-
-  window.addEventListener('pagehide', () => {
-    localforage.getItem(CUSTOM_KEY).then(mazzo => {
-      if (!mazzo || !mazzo.length) return;
-      esportaBackup({ silenzioso: true });
-    });
-  });
-
   window.addEventListener('resize', autoFit);
 </script>
 
