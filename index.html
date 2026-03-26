@@ -533,44 +533,61 @@ input[type="file"] { display: none; }
   }
 
   function renderCommunity(cards) {
-    const ADMIN_UID = '6PF8IUUL2IZLXj8v82yHM133vvg2';
-    const grid = document.getElementById('community-grid');
-    grid.innerHTML = '';
-    if (!cards.length) return;
-    const isAdmin = _currentUser && _currentUser.uid === ADMIN_UID;  // ← AGGIUNTO
-    cards.forEach(carta => {
-      // ... img, testo, likes, btns, btnImport, btnLike invariati ...
-      btns.appendChild(btnImport);
-      btns.appendChild(btnLike);
-      if (isAdmin) {
-        // bottone elimina
-        const btnDel = document.createElement('button');
-        btnDel.className = 'c-like';
-        btnDel.style.background = '#d64040';
-        btnDel.textContent = '🗑';
-        btnDel.title = 'Elimina carta (admin)';
-        btnDel.onclick = () => eliminaCartaCommunity(carta.id);
-        btns.appendChild(btnDel);
-        // nome autore  ← AGGIUNTO
-        const autore = document.createElement('div');
-        autore.style.cssText = 'font-size:8px;color:#502369;font-weight:bold;text-align:center;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px;';
-        autore.title = 'UID: ' + (carta.uid || 'n/d');
-        autore.textContent = '👤 ' + (carta.autore || 'Sconosciuto');
-        wrap.appendChild(img);
-        wrap.appendChild(testo);
-        wrap.appendChild(likes);
-        wrap.appendChild(btns);
-        wrap.appendChild(autore);  // ← dopo btns
-      } else {
-        wrap.appendChild(img);
-        wrap.appendChild(testo);
-        wrap.appendChild(likes);
-        wrap.appendChild(btns);
-      }
-      grid.appendChild(wrap);
-    });
-  }
-
+  const ADMIN_UID = '6PF8IUUL2IZLXj8v82yHM133vvg2';
+  const grid = document.getElementById('community-grid');
+  grid.innerHTML = '';
+  if (!cards.length) return;
+  const isAdmin = _currentUser && _currentUser.uid === ADMIN_UID;
+  cards.forEach(carta => {
+    const wrap = document.createElement('div');
+    wrap.className = 'community-card';
+    const img = document.createElement('img');
+    img.src = carta.img;
+    img.title = carta.testo || '';
+    const testo = document.createElement('div');
+    testo.className = 'c-testo';
+    testo.textContent = carta.testo || '';
+    const likes = document.createElement('div');
+    likes.className = 'c-likes';
+    likes.id = 'likes-' + carta.id;
+    likes.textContent = '❤️ ' + (carta.likes || 0);
+    const btns = document.createElement('div');
+    btns.className = 'c-btns';
+    const btnImport = document.createElement('button');
+    btnImport.className = 'c-import';
+    btnImport.textContent = '⬇';
+    btnImport.title = 'Importa nel mazzo';
+    btnImport.onclick = () => importaDaCommunity(carta);
+    const btnLike = document.createElement('button');
+    btnLike.className = 'c-like';
+    btnLike.textContent = '❤';
+    btnLike.title = 'Metti like';
+    btnLike.onclick = () => likeCarta(carta.id);
+    btns.appendChild(btnImport);
+    btns.appendChild(btnLike);
+    if (isAdmin) {
+      const btnDel = document.createElement('button');
+      btnDel.className = 'c-like';
+      btnDel.style.background = '#d64040';
+      btnDel.textContent = '🗑';
+      btnDel.title = 'Elimina carta (admin)';
+      btnDel.onclick = () => eliminaCartaCommunity(carta.id);
+      btns.appendChild(btnDel);
+    }
+    wrap.appendChild(img);
+    wrap.appendChild(testo);
+    wrap.appendChild(likes);
+    wrap.appendChild(btns);
+    if (isAdmin) {
+      const autore = document.createElement('div');
+      autore.style.cssText = 'font-size:8px;color:#502369;font-weight:bold;text-align:center;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px;';
+      autore.title = 'UID: ' + (carta.uid || 'n/d');
+      autore.textContent = '👤 ' + (carta.autore || 'Sconosciuto');
+      wrap.appendChild(autore);
+    }
+    grid.appendChild(wrap);
+  });
+}
 
   window.filtraCommunity = () => {
     const q = document.getElementById('community-search').value.trim().toLowerCase();
