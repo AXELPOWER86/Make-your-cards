@@ -241,6 +241,97 @@ input[type="file"] { display: none; }
 .community-card .c-import { background: #3498db; color: #fff; }
 .community-card .c-like { background: #e67e22; color: #fff; }
 #community-status { font-size: 13px; color: #502369; font-style: italic; text-align: center; }
+
+/* ===== Overlay Privacy/Credits ===== */
+#privacyOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.65);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 40000;
+  padding: 18px;
+}
+#privacySheet {
+  width: min(900px, 95vw);
+  max-height: 85vh;
+  background: #f9e0a7;
+  border: 4px solid #502369;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0,0,0,.35);
+  display: flex;
+  flex-direction: column;
+}
+#privacyHeader {
+  background: linear-gradient(145deg, #dfad24, #9b710e);
+  padding: 12px 14px;
+  color: #502369;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+#privacyTitle {
+  flex: 1;
+  text-align: center;
+  font-size: 18px;
+}
+#privacyClose {
+  border: none;
+  border-radius: 10px;
+  padding: 6px 10px;
+  cursor: pointer;
+  background: rgba(145,1,1,.95);
+  color: white;
+  font-weight: 900;
+  width: auto;
+  flex: 0 0 auto;
+  padding: 6px 10px; /* già ok, ma puoi regolarlo */
+}
+#privacyBody {
+  padding: 16px;
+  overflow-y: auto;
+  color: #502369;
+  font-weight: 700;
+  line-height: 1.55;
+  font-size: 13px;
+  text-align: left;
+  scrollbar-width: none;
+}
+#privacyBody::-webkit-scrollbar { width: 0; height: 0; }
+#privacyBody ul {
+  margin: 10px 0 0 18px;
+  padding: 0;
+  text-align: left;
+}
+#privacyBody li {
+  margin: 10px 0;
+  text-align: left;
+}
+/* Bottone (i) */
+#infoPrivacyBtn {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: #f9e0a7;
+  border: 3px solid #502369;
+  color: #502369;
+  font-size: 22px;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 30000;
+  box-shadow: 0 16px 40px rgba(0,0,0,.25);
+  user-select: none;
+}
+#infoPrivacyBtn:active { transform: scale(0.96); }
 </style>
 </head>
 <body>
@@ -1083,6 +1174,62 @@ async function modificaCarta(idx) {
   window.aggiornaListaCustom = aggiornaListaCustom;
   window.addEventListener('resize', () => document.fonts.ready.then(() => autoFit()));
 </script>
+<!-- Bottone (i) privacy/credits -->
+<div id="infoPrivacyBtn" title="Privacy e Credits">i</div>
 
+<!-- Overlay Privacy e Credits -->
+<div id="privacyOverlay" role="dialog" aria-modal="true">
+  <div id="privacySheet">
+    <div id="privacyHeader">
+      <div style="width:40px;"></div>
+      <div id="privacyTitle">🔒 Informativa privacy e Credits</div>
+      <button id="privacyClose">✕</button>
+    </div>
+    <div id="privacyBody">
+      <p><b>Porky's Game® — Editor Carte</b> non raccoglie dati per analisi, statistiche o attività di tracciamento.</p>
+      <p>I dati del mazzo personalizzato vengono salvati esclusivamente in locale sul tuo dispositivo tramite localForage. Se effettui l'accesso con Google, una copia di backup viene sincronizzata sul tuo account Firebase personale e non è accessibile ad altri utenti.</p>
+      <p>Solo in caso di condivisione volontaria con la community, gli altri utenti potranno vedrare le tue carte</p>
+      <ul>
+        <li><b>Credits:</b> Immagini realizzate con AI e poi perfezionate. Audio recuperati da Myinstants (https://www.myinstants.com).</li>
+
+        <li>The MIT License — html2canvas 1.4.1 &lt;https://html2canvas.hertzen.com&gt;<br>
+        Copyright (c) 2022 Niklas von Hertzen &lt;https://hertzen.com&gt;<br>
+        Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions: The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.</li>
+
+        <li>The MIT License — localForage 1.x<br>
+        Copyright (c) 2013-2016 Mozilla<br>
+        Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions: The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.</li>
+
+        <li>Carlito font by Łukasz Dziedzic — Licensed under the SIL Open Font License 1.1. Source: https://fonts.google.com/specimen/Carlito</li>
+
+        <li>Firebase SDK — Copyright (c) Google LLC. Use of the Firebase SDK is subject to Google's Terms of Service and Firebase Terms of Service (https://firebase.google.com/terms). The Firebase JavaScript SDK is licensed under the Apache License 2.0.</li>
+      </ul>
+
+      <p>
+        L'accesso alla fotocamera o alla galleria è richiesto esclusivamente per caricare immagini di sfondo personalizzate per le carte.
+        I file selezionati vengono trasmessi solo come sfondo della carta che hai generato e se decidi di condividere il file, anche visti dalla community, ma nessuno può sapere da quale dispositivo sono stati generati, in quanto sarà cura del software canva ricreare la carta.
+      </p>
+    </div>
+  </div>
+</div>
+<script>
+(function() {
+  const privacyBtn     = document.getElementById('infoPrivacyBtn');
+  const privacyOverlay = document.getElementById('privacyOverlay');
+  const privacyClose   = document.getElementById('privacyClose');
+  if (!privacyBtn || !privacyOverlay || !privacyClose) return;
+
+  function openPrivacy()  { privacyOverlay.style.display = 'flex'; }
+  function closePrivacy() { privacyOverlay.style.display = 'none'; }
+
+  privacyBtn.addEventListener('click', openPrivacy);
+  privacyClose.addEventListener('click', closePrivacy);
+  privacyOverlay.addEventListener('click', e => { if (e.target === privacyOverlay) closePrivacy(); });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && privacyOverlay.style.display === 'flex') closePrivacy();
+  });
+})();
+</script>
 </body>
 </html>
+
