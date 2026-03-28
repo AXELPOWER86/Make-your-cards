@@ -1004,6 +1004,15 @@ function autoFit() {
   const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
   if (!mazzo.length) { await customAlert('Il mazzo è vuoto, niente da salvare.'); return; }
 
+  // Chiedi cartella se non già selezionata
+  if (window.showDirectoryPicker && !_cartellaHandle) {
+    try {
+      _cartellaHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+    } catch {
+      _cartellaHandle = null; // utente ha annullato
+    }
+  }
+    
   // 1. Scarica JSON
   const json = JSON.stringify(mazzo, null, 2);
   const blob = new Blob([json], { type: 'application/json' });
