@@ -1234,7 +1234,7 @@ function filtraMazzo() {
   window.addEventListener('resize', () => document.fonts.ready.then(() => autoFit()));
 
   // ── Istruzioni ──
-  async function mostraIstruzioni() {
+ window.mostraIstruzioni = async function() {
     await customAlert(
       '📝 COME CREARE UNA CARTA\n\n' +
       '1. Opzionale: carica uno sfondo personalizzato\n' +
@@ -1251,26 +1251,12 @@ function filtraMazzo() {
       '☁️ Accedi con Google per il backup automatico nel cloud'
     );
   }
-
-  document.getElementById('infoHelpBtn').addEventListener('click', mostraIstruzioni);
-
-  // mostra al primo accesso o se non apre il sito da più di 1 giorno
-  const ora = Date.now();
-  const ultimaVisita = parseInt(localStorage.getItem('porky_last_visit') || '0');
-  const unGiorno = 24 * 60 * 60 * 1000;
-
-  if (!ultimaVisita || (ora - ultimaVisita) > unGiorno) {
-    mostraIstruzioni();
-  }
-
-  localStorage.setItem('porky_last_visit', ora);
-}
 </script>
-<!-- Bottone (i) privacy/credits -->
-<div id="infoPrivacyBtn" title="Privacy e Credits">i</div>
 <!-- Bottone (?) istruzioni -->
 <div id="infoHelpBtn" title="Istruzioni">?</div>
-  
+<!-- Bottone (i) privacy/credits -->
+<div id="infoPrivacyBtn" title="Privacy e Credits">i</div>
+ 
 <!-- Overlay Privacy e Credits -->
 <div id="privacyOverlay" role="dialog" aria-modal="true">
   <div id="privacySheet">
@@ -1335,6 +1321,22 @@ function filtraMazzo() {
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && privacyOverlay.style.display === 'flex') closePrivacy();
   });
+})();
+
+// ── Bottone istruzioni ──
+(function() {
+  const helpBtn = document.getElementById('infoHelpBtn');
+  if (!helpBtn) return;
+
+  helpBtn.addEventListener('click', () => window.mostraIstruzioni && window.mostraIstruzioni());
+
+  // mostra al primo accesso o dopo 1 giorno
+  const ora = Date.now();
+  const ultimaVisita = parseInt(localStorage.getItem('porky_last_visit') || '0');
+  if (!ultimaVisita || (ora - ultimaVisita) > 24 * 60 * 60 * 1000) {
+    setTimeout(() => window.mostraIstruzioni && window.mostraIstruzioni(), 300);
+  }
+  localStorage.setItem('porky_last_visit', ora);
 })();
 </script>
 </body>
