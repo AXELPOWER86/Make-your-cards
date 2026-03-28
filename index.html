@@ -1237,10 +1237,17 @@ function filtraMazzo() {
   async function mostraIstruzioni() {
     await customAlert(
       '📝 COME CREARE UNA CARTA\n\n' +
-      '1. Scrivi il testo della carta nel campo in alto\n' +
-      '2. Opzionale: carica uno sfondo personalizzato\n' +
-      '3. Clicca 💾 Salva nel mazzo per aggiungere la carta\n' +
-      '4. Clicca 💾 Backup Mazzo per scaricare tutte le carte\n\n' +
+      '1. Opzionale: carica uno sfondo personalizzato\n' +
+      '2. Scrivi il testo della carta nel campo in alto,\nsi adatterà automaticamente alla carta\n' +
+      '3. Clicca su ⬇ Scarica PNG se vuoi salvare la carta nella tua galleria\n' +
+      '4. Clicca 💾 Salva nel mazzo per aggiungere la carta al tuo mazzo\n' +
+      '5. Clicca 🗑 Cancella testo per cancellare il testo inserito\n' +
+      '6. Clicca 🗑 Cancella tutto per eliminare tutte le carte del tuo mazzo\n' +
+      '7. Clicca 💾 Backup Mazzo per scaricare tutte le carte\n' +
+      '8. Clicca 📂 Importa backup per importare un mazzo personalizzato\n' +
+      '9. Cliccando sulla carta o su ✏️ puoi nuovamente modificarla,\nclicca una seconda volta per deselezionarla\n' +
+      '10. Cliccando sul 🌐 puoi condividerla con la community\n' +
+      '10. Cliccando sul 🗑 puoi cancellare la singola carta\n' +
       '☁️ Accedi con Google per il backup automatico nel cloud'
     );
   }
