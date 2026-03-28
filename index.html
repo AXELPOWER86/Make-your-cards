@@ -989,9 +989,6 @@ function autoFit() {
 
       // backup cloud automatico
       if (window.backupCloud) await window.backupCloud(mazzoFinale);
-
-      await salvaFile(injectedDataUrl, nome);
-      await esportaBackup();
       resetAll();
 
     } catch(e) {
@@ -1243,6 +1240,14 @@ function filtraMazzo() {
     if (e.key === 'Escape' && privacyOverlay.style.display === 'flex') closePrivacy();
   });
 })();
+
+window.addEventListener('beforeunload', (e) => {
+  localforage.getItem(CUSTOM_KEY).then(mazzo => {
+    if (mazzo && mazzo.length) esportaBackup();
+  });
+  e.preventDefault();
+  e.returnValue = '';  // mostra il dialogo nativo del browser "Vuoi lasciare la pagina?"
+});
 </script>
 </body>
 </html>
