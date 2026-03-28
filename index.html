@@ -1003,7 +1003,16 @@ function autoFit() {
   async function esportaBackup() {
   const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
   if (!mazzo.length) { await customAlert('Il mazzo è vuoto, niente da salvare.'); return; }
-
+  if (window.showDirectoryPicker && !_cartellaHandle) {
+    try {
+      _cartellaHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+    } catch(err) {
+      console.error('showDirectoryPicker fallito:', err);
+      _cartellaHandle = null;
+    }
+  } else {
+    console.log('showDirectoryPicker disponibile:', !!window.showDirectoryPicker, '| cartella già selezionata:', !!_cartellaHandle);
+  }
   // Chiedi cartella se non già selezionata
   if (window.showDirectoryPicker && !_cartellaHandle) {
     try {
