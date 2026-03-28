@@ -332,6 +332,28 @@ input[type="file"] { display: none; }
   user-select: none;
 }
 #infoPrivacyBtn:active { transform: scale(0.96); }
+
+#infoHelpBtn {
+  position: fixed;
+  left: 14px;
+  bottom: 14px;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: #f9e0a7;
+  border: 3px solid #502369;
+  color: #502369;
+  font-size: 22px;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 30000;
+  box-shadow: 0 16px 40px rgba(0,0,0,.25);
+  user-select: none;
+}
+#infoHelpBtn:active { transform: scale(0.96); }
 </style>
 </head>
 <body>
@@ -1210,10 +1232,37 @@ function filtraMazzo() {
   }
   window.aggiornaListaCustom = aggiornaListaCustom;
   window.addEventListener('resize', () => document.fonts.ready.then(() => autoFit()));
+
+  // ── Istruzioni ──
+  async function mostraIstruzioni() {
+    await customAlert(
+      '📝 COME CREARE UNA CARTA\n\n' +
+      '1. Scrivi il testo della carta nel campo in alto\n' +
+      '2. Opzionale: carica uno sfondo personalizzato\n' +
+      '3. Clicca 💾 Salva nel mazzo per aggiungere la carta\n' +
+      '4. Clicca 💾 Backup Mazzo per scaricare tutte le carte\n\n' +
+      '☁️ Accedi con Google per il backup automatico nel cloud'
+    );
+  }
+
+  document.getElementById('infoHelpBtn').addEventListener('click', mostraIstruzioni);
+
+  // mostra al primo accesso o se non apre il sito da più di 1 giorno
+  const ora = Date.now();
+  const ultimaVisita = parseInt(localStorage.getItem('porky_last_visit') || '0');
+  const unGiorno = 24 * 60 * 60 * 1000;
+
+  if (!ultimaVisita || (ora - ultimaVisita) > unGiorno) {
+    mostraIstruzioni();
+  }
+
+  localStorage.setItem('porky_last_visit', ora);
 </script>
 <!-- Bottone (i) privacy/credits -->
 <div id="infoPrivacyBtn" title="Privacy e Credits">i</div>
-
+<!-- Bottone (?) istruzioni -->
+<div id="infoHelpBtn" title="Istruzioni">?</div>
+  
 <!-- Overlay Privacy e Credits -->
 <div id="privacyOverlay" role="dialog" aria-modal="true">
   <div id="privacySheet">
