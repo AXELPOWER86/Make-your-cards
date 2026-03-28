@@ -1001,28 +1001,58 @@ function autoFit() {
 
   // ── Backup Mazzo ──
   async function esportaBackup() {
-    const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
-    if (!mazzo.length) { await customAlert('Il mazzo è vuoto, niente da salvare.'); return; }
-    const json = JSON.stringify(mazzo, null, 2);
-    const blob = new Blob([json], { type: 'application/json' });
-    const filename = 'mazzo_custom_backup_' + new Date().toISOString().slice(0, 10) + '.json';
+  const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
+  if (!mazzo.length) { await customAlert('Il mazzo è vuoto, niente da salvare.'); return; }
 
-    if (_cartellaHandle) {
-      try {
-        const fileHandle = await _cartellaHandle.getFileHandle(filename, { create: true });
-        const writable = await fileHandle.createWritable();
-        await writable.write(blob);
-        await writable.close();
-        return; // silenzioso
-      } catch { /* fallback */ }
-    }
+  // 1. Scarica JSON
+  const json = JSON.stringify(mazzo, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const filename = 'mazzo_custom_backup.json';
 
+  if (_cartellaHandle) {
+    try {
+      const fileHandle = await _cartellaHandle.getFileHandle(filename, { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+    } catch { /* fallback */ }
+  } else {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
     link.download = filename;
     link.click();
     URL.revokeObjectURL(url);
+  }
+
+  // 2. Scarica tutti i PNG
+  for (const carta of mazzo) {
+    if (!carta.img || !carta.nome) continue;
+    try {
+      const res = await fetch(carta.img);
+      const pngBlob = await res.blob();
+
+      if (_cartellaHandle) {
+        try {
+          const fh = await _cartellaHandle.getFileHandle(carta.nome, { create: true });
+          const wr = await fh.createWritable();
+          await wr.write(pngBlob);
+          await wr.close();
+        } catch { /* ignora errori singola carta */ }
+      } else {
+        const url = URL.createObjectURL(pngBlob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = carta.nome;
+        link.click();
+        URL.revokeObjectURL(url);
+        // piccola pausa tra download per non saturare il browser
+        await new Promise(r => setTimeout(r, 300));
+      }
+    } catch { /* ignora */ }
+  }
+
+    await customAlert('Backup completato: ' + mazzo.length + ' carte salvate.');
   }
 
   async function importaBackup(event) {
@@ -1240,14 +1270,6 @@ function filtraMazzo() {
     if (e.key === 'Escape' && privacyOverlay.style.display === 'flex') closePrivacy();
   });
 })();
-
-window.addEventListener('beforeunload', (e) => {
-  localforage.getItem(CUSTOM_KEY).then(mazzo => {
-    if (mazzo && mazzo.length) esportaBackup();
-  });
-  e.preventDefault();
-  e.returnValue = '';  // mostra il dialogo nativo del browser "Vuoi lasciare la pagina?"
-});
 </script>
 </body>
 </html>
