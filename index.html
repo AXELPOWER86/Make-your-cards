@@ -1235,6 +1235,11 @@ function filtraMazzo() {
 
   // ── Istruzioni ──
  window.mostraIstruzioni = async function() {
+   const overlay = document.getELementById('modaloverlay');
+   const modalText = document.getElementById('modaltext');
+   
+   modalText.style.textAlign = 'left';
+   modalText.style.fontSize = '14px';
     await customAlert(
       '📝 COME CREARE UNA CARTA\n\n' +
       '1. Opzionale: carica uno sfondo personalizzato\n' +
@@ -1250,6 +1255,8 @@ function filtraMazzo() {
       '10. Cliccando sul 🗑 puoi cancellare la singola carta\n' +
       '☁️ Accedi con Google per il backup automatico nel cloud'
     );
+   modalText.style.textAlign = '';
+   modalText.style.fontSize = '';
   }
 </script>
 <!-- Bottone (?) istruzioni -->
