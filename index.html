@@ -161,7 +161,6 @@ button {
   text-align: center; width: 100%; flex: 1; display: flex;
   align-items: center; justify-content: center; overflow: hidden; padding: 0 4px;
 }
-
 #card-body-inner {
   font-family: 'Carlito', Arial, Helvetica, sans-serif;
   font-weight: 900;
@@ -242,8 +241,8 @@ input[type="file"] { display: none; }
 .community-card .c-like { background: #e67e22; color: #fff; }
 #community-status { font-size: 13px; color: #502369; font-style: italic; text-align: center; }
 
-/* ===== Overlay Privacy/Credits ===== */
-#privacyOverlay {
+/* ===== Sheet overlay generico (Istruzioni + Privacy) ===== */
+.sheet-overlay {
   position: fixed;
   inset: 0;
   background: rgba(0,0,0,.65);
@@ -253,7 +252,7 @@ input[type="file"] { display: none; }
   z-index: 40000;
   padding: 18px;
 }
-#privacySheet {
+.sheet-box {
   width: min(900px, 95vw);
   max-height: 85vh;
   background: #f9e0a7;
@@ -264,7 +263,7 @@ input[type="file"] { display: none; }
   display: flex;
   flex-direction: column;
 }
-#privacyHeader {
+.sheet-header {
   background: linear-gradient(145deg, #dfad24, #9b710e);
   padding: 12px 14px;
   color: #502369;
@@ -273,12 +272,12 @@ input[type="file"] { display: none; }
   align-items: center;
   justify-content: space-between;
 }
-#privacyTitle {
+.sheet-title {
   flex: 1;
   text-align: center;
   font-size: 18px;
 }
-#privacyClose {
+.sheet-close {
   border: none;
   border-radius: 10px;
   padding: 6px 10px;
@@ -288,9 +287,8 @@ input[type="file"] { display: none; }
   font-weight: 900;
   width: auto;
   flex: 0 0 auto;
-  padding: 6px 10px; /* già ok, ma puoi regolarlo */
 }
-#privacyBody {
+.sheet-body {
   padding: 16px;
   overflow-y: auto;
   color: #502369;
@@ -300,58 +298,30 @@ input[type="file"] { display: none; }
   text-align: left;
   scrollbar-width: none;
 }
-#privacyBody::-webkit-scrollbar { width: 0; height: 0; }
-#privacyBody ul {
-  margin: 10px 0 0 18px;
-  padding: 0;
-  text-align: left;
-}
-#privacyBody li {
-  margin: 10px 0;
-  text-align: left;
-}
-/* Bottone (i) */
+.sheet-body::-webkit-scrollbar { width: 0; height: 0; }
+.sheet-body ul { margin: 10px 0 0 18px; padding: 0; text-align: left; }
+.sheet-body li { margin: 10px 0; text-align: left; }
+
+/* Bottoni fissi in basso */
 #infoPrivacyBtn {
-  position: fixed;
-  right: 14px;
-  bottom: 14px;
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  background: #f9e0a7;
-  border: 3px solid #502369;
-  color: #502369;
-  font-size: 22px;
-  font-weight: 900;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  z-index: 30000;
-  box-shadow: 0 16px 40px rgba(0,0,0,.25);
-  user-select: none;
+  position: fixed; right: 14px; bottom: 14px;
+  width: 52px; height: 52px; border-radius: 50%;
+  background: #f9e0a7; border: 3px solid #502369;
+  color: #502369; font-size: 22px; font-weight: 900;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; z-index: 30000;
+  box-shadow: 0 16px 40px rgba(0,0,0,.25); user-select: none;
 }
 #infoPrivacyBtn:active { transform: scale(0.96); }
 
 #infoHelpBtn {
-  position: fixed;
-  left: 14px;
-  bottom: 14px;
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  background: #f9e0a7;
-  border: 3px solid #502369;
-  color: #502369;
-  font-size: 22px;
-  font-weight: 900;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  z-index: 30000;
-  box-shadow: 0 16px 40px rgba(0,0,0,.25);
-  user-select: none;
+  position: fixed; left: 14px; bottom: 14px;
+  width: 52px; height: 52px; border-radius: 50%;
+  background: #f9e0a7; border: 3px solid #502369;
+  color: #502369; font-size: 22px; font-weight: 900;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; z-index: 30000;
+  box-shadow: 0 16px 40px rgba(0,0,0,.25); user-select: none;
 }
 #infoHelpBtn:active { transform: scale(0.96); }
 </style>
@@ -413,11 +383,11 @@ input[type="file"] { display: none; }
   <div class="mazzo-header">
     <span>🃏 Mazzo personalizzato</span>
     <span class="mazzo-count"><span id="contatore-custom">0</span> carte</span>
-    <input type="text" id="cerca-mazzo" placeholder="🔍 Cerca nel mazzo..." 
-  oninput="filtraMazzo()"
-  style="padding:4px 10px;border:2px solid #502369;border-radius:6px;
-  font-family:'Carlito',Arial,sans-serif;font-weight:bold;font-size:13px;
-  color:#502369;background:#fff;outline:none;width:150px;">
+    <input type="text" id="cerca-mazzo" placeholder="🔍 Cerca nel mazzo..."
+      oninput="filtraMazzo()"
+      style="padding:4px 10px;border:2px solid #502369;border-radius:6px;
+      font-family:'Carlito',Arial,sans-serif;font-weight:bold;font-size:13px;
+      color:#502369;background:#fff;outline:none;width:150px;">
     <button class="btn-cancella-tutto" onclick="cancellaTuttoMazzo()">🗑 Cancella tutto</button>
     <button class="btn-cancella-tutto" style="background:linear-gradient(145deg,#2ecc71,#1a8a47); margin-left:0;" onclick="esportaBackup()">💾 Backup Mazzo</button>
     <button class="btn-cancella-tutto" style="background:linear-gradient(145deg,#3498db,#1a5a8a); margin-left:0;" onclick="document.getElementById('inp-backup').click()">📂 Importa backup</button>
@@ -439,7 +409,7 @@ input[type="file"] { display: none; }
   </div>
 </div>
 
-<!-- MODALE GENERICA -->
+<!-- MODALE GENERICA (alert/confirm) -->
 <div id="modalOverlay" style="
   position:fixed;inset:0;background:rgba(0,0,0,.6);
   display:none;align-items:center;justify-content:center;z-index:30000;
@@ -460,7 +430,6 @@ input[type="file"] { display: none; }
   </div>
 </div>
 
-<!-- MODALE GENERICA -->
 <script>
 (function () {
   function modalDialog(cfgOrMessage, type = "alert") {
@@ -559,7 +528,6 @@ input[type="file"] { display: none; }
   let _currentUser = null;
   let _communityCards = [];
 
-  // ── AUTH STATE ──
   onAuthStateChanged(auth, async user => {
     _currentUser = user;
     const loginInfo  = document.getElementById('login-info');
@@ -571,7 +539,6 @@ input[type="file"] { display: none; }
       btnLogin.style.display  = 'none';
       btnLogout.style.display = 'inline-block';
       btnCom.style.display    = 'inline-block';
-      // ripristina mazzo dal cloud se localforage è vuoto
       await sincronizzaDaCloud();
     } else {
       loginInfo.textContent   = 'Non connesso';
@@ -581,13 +548,9 @@ input[type="file"] { display: none; }
     }
   });
 
-  // ── LOGIN / LOGOUT ──
   window.loginGoogle = async () => {
-    try {
-      await signInWithPopup(auth, new GoogleAuthProvider());
-    } catch(e) {
-      await customAlert('Errore login:\n' + e.message);
-    }
+    try { await signInWithPopup(auth, new GoogleAuthProvider()); }
+    catch(e) { await customAlert('Errore login:\n' + e.message); }
   };
 
   window.logoutGoogle = async () => {
@@ -595,13 +558,11 @@ input[type="file"] { display: none; }
     await signOut(auth);
   };
 
-  // ── BACKUP CLOUD ──
   window.backupCloud = async (mazzo) => {
     if (!_currentUser) return;
     try {
       await setDoc(doc(db, 'users', _currentUser.uid, 'backup', 'mazzo'), {
-        carte: mazzo,
-        aggiornato: new Date().toISOString()
+        carte: mazzo, aggiornato: new Date().toISOString()
       });
     } catch { /* silenzioso */ }
   };
@@ -651,61 +612,61 @@ input[type="file"] { display: none; }
   }
 
   function renderCommunity(cards) {
-  const ADMIN_UID = '6PF8IUUL2IZLXj8v82yHM133vvg2';
-  const grid = document.getElementById('community-grid');
-  grid.innerHTML = '';
-  if (!cards.length) return;
-  const isAdmin = _currentUser && _currentUser.uid === ADMIN_UID;
-  cards.forEach(carta => {
-    const wrap = document.createElement('div');
-    wrap.className = 'community-card';
-    const img = document.createElement('img');
-    img.src = carta.img;
-    img.title = carta.testo || '';
-    const testo = document.createElement('div');
-    testo.className = 'c-testo';
-    testo.textContent = carta.testo || '';
-    const likes = document.createElement('div');
-    likes.className = 'c-likes';
-    likes.id = 'likes-' + carta.id;
-    likes.textContent = '❤️ ' + (carta.likes || 0);
-    const btns = document.createElement('div');
-    btns.className = 'c-btns';
-    const btnImport = document.createElement('button');
-    btnImport.className = 'c-import';
-    btnImport.textContent = '⬇';
-    btnImport.title = 'Importa nel mazzo';
-    btnImport.onclick = () => importaDaCommunity(carta);
-    const btnLike = document.createElement('button');
-    btnLike.className = 'c-like';
-    btnLike.textContent = '❤';
-    btnLike.title = 'Metti like';
-    btnLike.onclick = () => likeCarta(carta.id);
-    btns.appendChild(btnImport);
-    btns.appendChild(btnLike);
-    if (isAdmin) {
-      const btnDel = document.createElement('button');
-      btnDel.className = 'c-like';
-      btnDel.style.background = '#d64040';
-      btnDel.textContent = '🗑';
-      btnDel.title = 'Elimina carta (admin)';
-      btnDel.onclick = () => eliminaCartaCommunity(carta.id);
-      btns.appendChild(btnDel);
-    }
-    wrap.appendChild(img);
-    wrap.appendChild(testo);
-    wrap.appendChild(likes);
-    wrap.appendChild(btns);
-    if (isAdmin) {
-      const autore = document.createElement('div');
-      autore.style.cssText = 'font-size:8px;color:#502369;font-weight:bold;text-align:center;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px;';
-      autore.title = 'UID: ' + (carta.uid || 'n/d');
-      autore.textContent = '👤 ' + (carta.autore || 'Sconosciuto');
-      wrap.appendChild(autore);
-    }
-    grid.appendChild(wrap);
-  });
-}
+    const ADMIN_UID = '6PF8IUUL2IZLXj8v82yHM133vvg2';
+    const grid = document.getElementById('community-grid');
+    grid.innerHTML = '';
+    if (!cards.length) return;
+    const isAdmin = _currentUser && _currentUser.uid === ADMIN_UID;
+    cards.forEach(carta => {
+      const wrap = document.createElement('div');
+      wrap.className = 'community-card';
+      const img = document.createElement('img');
+      img.src = carta.img;
+      img.title = carta.testo || '';
+      const testo = document.createElement('div');
+      testo.className = 'c-testo';
+      testo.textContent = carta.testo || '';
+      const likes = document.createElement('div');
+      likes.className = 'c-likes';
+      likes.id = 'likes-' + carta.id;
+      likes.textContent = '❤️ ' + (carta.likes || 0);
+      const btns = document.createElement('div');
+      btns.className = 'c-btns';
+      const btnImport = document.createElement('button');
+      btnImport.className = 'c-import';
+      btnImport.textContent = '⬇';
+      btnImport.title = 'Importa nel mazzo';
+      btnImport.onclick = () => importaDaCommunity(carta);
+      const btnLike = document.createElement('button');
+      btnLike.className = 'c-like';
+      btnLike.textContent = '❤';
+      btnLike.title = 'Metti like';
+      btnLike.onclick = () => likeCarta(carta.id);
+      btns.appendChild(btnImport);
+      btns.appendChild(btnLike);
+      if (isAdmin) {
+        const btnDel = document.createElement('button');
+        btnDel.className = 'c-like';
+        btnDel.style.background = '#d64040';
+        btnDel.textContent = '🗑';
+        btnDel.title = 'Elimina carta (admin)';
+        btnDel.onclick = () => eliminaCartaCommunity(carta.id);
+        btns.appendChild(btnDel);
+      }
+      wrap.appendChild(img);
+      wrap.appendChild(testo);
+      wrap.appendChild(likes);
+      wrap.appendChild(btns);
+      if (isAdmin) {
+        const autore = document.createElement('div');
+        autore.style.cssText = 'font-size:8px;color:#502369;font-weight:bold;text-align:center;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px;';
+        autore.title = 'UID: ' + (carta.uid || 'n/d');
+        autore.textContent = '👤 ' + (carta.autore || 'Sconosciuto');
+        wrap.appendChild(autore);
+      }
+      grid.appendChild(wrap);
+    });
+  }
 
   window.filtraCommunity = () => {
     const q = document.getElementById('community-search').value.trim().toLowerCase();
@@ -734,9 +695,7 @@ input[type="file"] { display: none; }
         const n = parseInt(el.textContent.replace('❤️ ', '')) + 1;
         el.textContent = '❤️ ' + n;
       }
-    } catch(e) {
-      await customAlert('Errore like:\n' + e.message);
-    }
+    } catch(e) { await customAlert('Errore like:\n' + e.message); }
   }
 
   async function eliminaCartaCommunity(id) {
@@ -746,15 +705,12 @@ input[type="file"] { display: none; }
       await deleteDoc(fbDoc(db, 'community', id));
       _communityCards = _communityCards.filter(c => c.id !== id);
       renderCommunity(_communityCards);
-    } catch(e) {
-      await customAlert('Errore eliminazione:\n' + e.message);
-    }
+    } catch(e) { await customAlert('Errore eliminazione:\n' + e.message); }
   }
 
   window.condividiInCommunity = async (carta) => {
     if (!_currentUser) { await customAlert('Devi accedere con Google per condividere.'); return; }
     try {
-      // controlla duplicati per shash
       const q = query(collection(db, 'community'));
       const snap = await getDocs(q);
       const esiste = snap.docs.some(d => d.data().shash === carta.shash);
@@ -770,9 +726,7 @@ input[type="file"] { display: none; }
         data: new Date().toISOString()
       });
       await customAlert('Carta condivisa con la community! 🎉');
-    } catch(e) {
-      await customAlert('Errore condivisione:\n' + e.message);
-    }
+    } catch(e) { await customAlert('Errore condivisione:\n' + e.message); }
   };
 </script>
 
@@ -781,7 +735,6 @@ input[type="file"] { display: none; }
   const CUSTOM_KEY = 'mazzo_custom';
   localforage.config({ name: 'PorkysGame', storeName: 'mazzo_carte' });
 
-  // ── INIT ──
   window.addEventListener('load', async () => {
     const cardBg = document.getElementById('card-bg');
     await new Promise(resolve => {
@@ -800,30 +753,29 @@ input[type="file"] { display: none; }
     await tentaRipristinoAutomatico();
   });
 
-  // ── CARD UI ──
   function updateCard() {
-  const raw = document.getElementById('inp-body').value;
-  document.getElementById('card-body-inner').textContent = raw.toUpperCase();
-  document.fonts.ready.then(() => autoFit());
-}
-
-function autoFit() {
-  const inner = document.getElementById('card-body-inner');
-  const body  = document.getElementById('card-body');
-  if (!inner.textContent.trim()) return;
-  const maxH = body.clientHeight;
-  const maxW = body.clientWidth - 4;  // era -8, ora -4 per dare meno margine
-  let lo = 8, hi = 300, best = 8;
-  while (lo <= hi) {
-    const mid = Math.floor((lo + hi) / 2);
-    inner.style.fontSize = mid + 'px';
-    void inner.offsetHeight;
-    if (inner.scrollHeight <= maxH && inner.scrollWidth <= maxW + 4) { // tolleranza +4px su scrollWidth
-      best = mid; lo = mid + 1;
-    } else { hi = mid - 1; }
+    const raw = document.getElementById('inp-body').value;
+    document.getElementById('card-body-inner').textContent = raw.toUpperCase();
+    document.fonts.ready.then(() => autoFit());
   }
-  inner.style.fontSize = best + 'px';
-}
+
+  function autoFit() {
+    const inner = document.getElementById('card-body-inner');
+    const body  = document.getElementById('card-body');
+    if (!inner.textContent.trim()) return;
+    const maxH = body.clientHeight;
+    const maxW = body.clientWidth - 4;
+    let lo = 8, hi = 300, best = 8;
+    while (lo <= hi) {
+      const mid = Math.floor((lo + hi) / 2);
+      inner.style.fontSize = mid + 'px';
+      void inner.offsetHeight;
+      if (inner.scrollHeight <= maxH && inner.scrollWidth <= maxW + 4) {
+        best = mid; lo = mid + 1;
+      } else { hi = mid - 1; }
+    }
+    inner.style.fontSize = best + 'px';
+  }
 
   function resetAll() {
     document.getElementById('inp-body').value = '';
@@ -844,14 +796,12 @@ function autoFit() {
     reader.readAsDataURL(file);
   }
 
-  // ── HASH UTILS ──
   async function sha256String(str) {
     const buf = new TextEncoder().encode(str);
     const digest = await crypto.subtle.digest('SHA-256', buf);
     return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2,'0')).join('');
   }
 
-  // ── PNG CHUNK INJECT ──
   function injectPngTextChunk(arrayBuffer, keyword, text) {
     const encoder = new TextEncoder();
     const keyBytes = encoder.encode(keyword);
@@ -899,7 +849,6 @@ function autoFit() {
     return btoa(binary);
   }
 
-  // ── GENERA CANVAS ──
   async function generaCanvas() {
     const card = document.getElementById('card-container');
     return await html2canvas(card, {
@@ -908,24 +857,17 @@ function autoFit() {
     });
   }
 
-  // ── SALVA FILE HELPER (File System Access API con fallback) ──
   let _cartellaHandle = null;
 
   async function salvaFile(dataUrl, filename) {
     const res = await fetch(dataUrl);
     const blob = await res.blob();
-
     if (window.showDirectoryPicker) {
       try {
-        if (!_cartellaHandle) {
-          _cartellaHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
-        }
+        if (!_cartellaHandle) _cartellaHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
         const perm = await _cartellaHandle.requestPermission({ mode: 'readwrite' });
         if (perm !== 'granted') _cartellaHandle = null;
-      } catch {
-        _cartellaHandle = null;
-      }
-
+      } catch { _cartellaHandle = null; }
       if (_cartellaHandle) {
         try {
           const fileHandle = await _cartellaHandle.getFileHandle(filename, { create: true });
@@ -934,13 +876,9 @@ function autoFit() {
           await writable.close();
           await customAlert('Carta salvata in:\n' + _cartellaHandle.name + '/' + filename);
           return filename;
-        } catch {
-          _cartellaHandle = null;
-        }
+        } catch { _cartellaHandle = null; }
       }
     }
-
-    // Fallback download normale
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.download = filename;
@@ -951,7 +889,6 @@ function autoFit() {
     return filename;
   }
 
-  // ── DOWNLOAD (Scarica PNG) ──
   async function downloadCard() {
     const btn = document.getElementById('btn-dl');
     btn.classList.add('loading'); btn.disabled = true;
@@ -972,7 +909,6 @@ function autoFit() {
     }
   }
 
-  // ── SALVA NEL MAZZO PERSONALIZZATO ──
   async function salvaInMazzo() {
     const btnSalva = document.getElementById('btn-salva');
     btnSalva.disabled = true;
@@ -980,39 +916,25 @@ function autoFit() {
     try {
       const testo = document.getElementById('inp-body').value.trim();
       if (!testo) { await customAlert('Scrivi prima il testo della carta.'); return; }
-
       const shash = await sha256String(testo.toUpperCase());
       const canvas = await generaCanvas();
       const dataUrl = canvas.toDataURL('image/png');
       const rawBuf = await (await fetch(dataUrl)).arrayBuffer();
       const pngBuf = injectPngTextChunk(rawBuf, 'porky_shash', shash);
       const injectedDataUrl = 'data:image/png;base64,' + arrayBufferToBase64(pngBuf);
-
       const esistente = await localforage.getItem(CUSTOM_KEY) || [];
       if (esistente.some(c => c.shash === shash && !c._inModifica)) {
-        await customAlert('Questa carta è già nel mazzo personalizzato.');
-        return;
+        await customAlert('Questa carta è già nel mazzo personalizzato.'); return;
       }
-
       const cartaInModifica = esistente.find(c => c._inModifica);
-      const nome = cartaInModifica
-        ? cartaInModifica.nome
-        : 'carta_custom_' + shash.slice(0, 8) + '.png';
-
-      const carta = {
-        hash: null, phash: null, shash, lphash256: null,
-        img: injectedDataUrl, nome, originale: nome, estratta: false, testo
-      };
-
+      const nome = cartaInModifica ? cartaInModifica.nome : 'carta_custom_' + shash.slice(0, 8) + '.png';
+      const carta = { hash: null, phash: null, shash, lphash256: null, img: injectedDataUrl, nome, originale: nome, estratta: false, testo };
       const mazzoFinale = esistente.filter(c => !c._inModifica);
       mazzoFinale.push(carta);
       await localforage.setItem(CUSTOM_KEY, mazzoFinale);
       await aggiornaListaCustom();
-
-      // backup cloud automatico
       if (window.backupCloud) await window.backupCloud(mazzoFinale);
       resetAll();
-
     } catch(e) {
       await customAlert('Errore salvataggio.\n' + e.message);
     } finally {
@@ -1021,68 +943,48 @@ function autoFit() {
     }
   }
 
-  // ── Backup Mazzo ──
   async function esportaBackup() {
-  const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
-  if (!mazzo.length) { await customAlert('Il mazzo è vuoto, niente da salvare.'); return; }
-  
-  // Chiedi cartella se non già selezionata
-  if (window.showDirectoryPicker && !_cartellaHandle) {
-    try {
-      _cartellaHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
-    } catch {
-      _cartellaHandle = null; // utente ha annullato
+    const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
+    if (!mazzo.length) { await customAlert('Il mazzo è vuoto, niente da salvare.'); return; }
+    if (window.showDirectoryPicker && !_cartellaHandle) {
+      try { _cartellaHandle = await window.showDirectoryPicker({ mode: 'readwrite' }); }
+      catch { _cartellaHandle = null; }
     }
-  }
-    
-  // 1. Scarica JSON
-  const json = JSON.stringify(mazzo, null, 2);
-  const blob = new Blob([json], { type: 'application/json' });
-  const filename = 'mazzo_custom_backup.json';
-
-  if (_cartellaHandle) {
-    try {
-      const fileHandle = await _cartellaHandle.getFileHandle(filename, { create: true });
-      const writable = await fileHandle.createWritable();
-      await writable.write(blob);
-      await writable.close();
-    } catch { /* fallback */ }
-  } else {
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    link.click();
-    URL.revokeObjectURL(url);
-  }
-
-  // 2. Scarica tutti i PNG
-  for (const carta of mazzo) {
-    if (!carta.img || !carta.nome) continue;
-    try {
-      const res = await fetch(carta.img);
-      const pngBlob = await res.blob();
-
-      if (_cartellaHandle) {
-        try {
-          const fh = await _cartellaHandle.getFileHandle(carta.nome, { create: true });
-          const wr = await fh.createWritable();
-          await wr.write(pngBlob);
-          await wr.close();
-        } catch { /* ignora errori singola carta */ }
-      } else {
-        const url = URL.createObjectURL(pngBlob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = carta.nome;
-        link.click();
-        URL.revokeObjectURL(url);
-        // piccola pausa tra download per non saturare il browser
-        await new Promise(r => setTimeout(r, 300));
-      }
-    } catch { /* ignora */ }
-  }
-
+    const json = JSON.stringify(mazzo, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const filename = 'mazzo_custom_backup.json';
+    if (_cartellaHandle) {
+      try {
+        const fileHandle = await _cartellaHandle.getFileHandle(filename, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(blob); await writable.close();
+      } catch { /* fallback */ }
+    } else {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url; link.download = filename; link.click();
+      URL.revokeObjectURL(url);
+    }
+    for (const carta of mazzo) {
+      if (!carta.img || !carta.nome) continue;
+      try {
+        const res = await fetch(carta.img);
+        const pngBlob = await res.blob();
+        if (_cartellaHandle) {
+          try {
+            const fh = await _cartellaHandle.getFileHandle(carta.nome, { create: true });
+            const wr = await fh.createWritable();
+            await wr.write(pngBlob); await wr.close();
+          } catch { /* ignora */ }
+        } else {
+          const url = URL.createObjectURL(pngBlob);
+          const link = document.createElement('a');
+          link.href = url; link.download = carta.nome; link.click();
+          URL.revokeObjectURL(url);
+          await new Promise(r => setTimeout(r, 300));
+        }
+      } catch { /* ignora */ }
+    }
     await customAlert('Backup completato: ' + mazzo.length + ' carte salvate.');
   }
 
@@ -1115,9 +1017,7 @@ function autoFit() {
       }
       await aggiornaListaCustom();
       await customAlert('Backup importato: ' + dati.length + ' carte.');
-    } catch(e) {
-      await customAlert('Errore importazione:\n' + e.message);
-    }
+    } catch(e) { await customAlert('Errore importazione:\n' + e.message); }
   }
 
   async function tentaRipristinoAutomatico() {
@@ -1130,32 +1030,26 @@ function autoFit() {
     if (ok) document.getElementById('inp-backup').click();
   }
 
-  // ── MODIFICA CARTA ──
-async function modificaCarta(idx) {
-  const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
-  const carta = mazzo[idx];
-  if (!carta) return;
-
-  // se già in modifica → deseleziona
-  if (carta._inModifica) {
-    delete carta._inModifica;
+  async function modificaCarta(idx) {
+    const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
+    const carta = mazzo[idx];
+    if (!carta) return;
+    if (carta._inModifica) {
+      delete carta._inModifica;
+      await localforage.setItem(CUSTOM_KEY, mazzo);
+      await aggiornaListaCustom();
+      resetAll();
+      return;
+    }
+    const inModificaIdx = mazzo.findIndex(c => c._inModifica);
+    if (inModificaIdx !== -1) delete mazzo[inModificaIdx]._inModifica;
+    carta._inModifica = true;
     await localforage.setItem(CUSTOM_KEY, mazzo);
+    document.getElementById('inp-body').value = carta.testo || '';
+    updateCard();
     await aggiornaListaCustom();
-    resetAll();
-    return;
   }
 
-  // altrimenti → metti in modifica
-  const inModificaIdx = mazzo.findIndex(c => c._inModifica);
-  if (inModificaIdx !== -1) delete mazzo[inModificaIdx]._inModifica;
-  carta._inModifica = true;
-  await localforage.setItem(CUSTOM_KEY, mazzo);
-  document.getElementById('inp-body').value = carta.testo || '';
-  updateCard();
-  await aggiornaListaCustom();
-}
-
-  // ── ELIMINA CARTA ──
   async function eliminaCarta(idx) {
     const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
     const carta = mazzo[idx];
@@ -1170,25 +1064,22 @@ async function modificaCarta(idx) {
     await aggiornaListaCustom();
   }
 
-  // ── CANCELLA TUTTO ──
   async function cancellaTuttoMazzo() {
     if (!await customConfirm({ message: 'Cancellare tutto il mazzo personalizzato?', okText: 'SI', cancelText: 'NO' })) return;
     await localforage.removeItem(CUSTOM_KEY);
     await aggiornaListaCustom();
   }
 
-// ── RICERCA CARTE
-function filtraMazzo() {
-  const q = document.getElementById('cerca-mazzo').value.trim().toLowerCase();
-  const lista = document.getElementById('lista-custom');
-  lista.querySelectorAll('.card-item').forEach(item => {
-    const img = item.querySelector('img');
-    const testo = (img ? img.title : '').toLowerCase().replace('(in modifica) ', '');
-    item.style.display = (!q || testo.includes(q)) ? '' : 'none';
-  });
-}
+  function filtraMazzo() {
+    const q = document.getElementById('cerca-mazzo').value.trim().toLowerCase();
+    const lista = document.getElementById('lista-custom');
+    lista.querySelectorAll('.card-item').forEach(item => {
+      const img = item.querySelector('img');
+      const testo = (img ? img.title : '').toLowerCase().replace('(in modifica) ', '');
+      item.style.display = (!q || testo.includes(q)) ? '' : 'none';
+    });
+  }
 
-  // ── AGGIORNA LISTA ──
   async function aggiornaListaCustom() {
     const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
     document.getElementById('contatore-custom').textContent = mazzo.length;
@@ -1210,17 +1101,14 @@ function filtraMazzo() {
       const btns = document.createElement('div');
       btns.className = 'card-item-btns';
       const btnMod = document.createElement('button');
-      btnMod.textContent = '✏️';
-      btnMod.className = 'btn-mod';
+      btnMod.textContent = '✏️'; btnMod.className = 'btn-mod';
       btnMod.onclick = () => modificaCarta(idx);
       const btnShare = document.createElement('button');
-      btnShare.textContent = '🌐';
-      btnShare.className = 'btn-share';
+      btnShare.textContent = '🌐'; btnShare.className = 'btn-share';
       btnShare.title = 'Condividi in community';
       btnShare.onclick = () => { if (window.condividiInCommunity) window.condividiInCommunity(carta); };
       const btnDel = document.createElement('button');
-      btnDel.textContent = '🗑';
-      btnDel.className = 'btn-del';
+      btnDel.textContent = '🗑'; btnDel.className = 'btn-del';
       btnDel.onclick = () => eliminaCarta(idx);
       btns.appendChild(btnMod);
       btns.appendChild(btnShare);
@@ -1230,115 +1118,128 @@ function filtraMazzo() {
       lista.appendChild(wrap);
     });
   }
+
   window.aggiornaListaCustom = aggiornaListaCustom;
   window.addEventListener('resize', () => document.fonts.ready.then(() => autoFit()));
-
-  // ── Istruzioni ──
- window.mostraIstruzioni = async function() {
-    await customAlert(
-      '📝 COME CREARE UNA CARTA\n\n' +
-      '1. Opzionale: carica uno sfondo personalizzato\n' +
-      '2. Scrivi il testo della carta nel campo in alto,\nsi adatterà automaticamente alla carta\n' +
-      '3. Clicca su ⬇ Scarica PNG se vuoi salvare la carta nella tua galleria\n' +
-      '4. Clicca 💾 Salva nel mazzo per aggiungere la carta al tuo mazzo\n' +
-      '5. Clicca 🗑 Cancella testo per cancellare il testo inserito\n' +
-      '6. Clicca 🗑 Cancella tutto per eliminare tutte le carte del tuo mazzo\n' +
-      '7. Clicca 💾 Backup Mazzo per scaricare tutte le carte\n' +
-      '8. Clicca 📂 Importa backup per importare un mazzo personalizzato\n' +
-      '9. Cliccando sulla carta o su ✏️ puoi nuovamente modificarla,\nclicca una seconda volta per deselezionarla\n' +
-      '10. Cliccando sul 🌐 puoi condividerla con la community\n' +
-      '10. Cliccando sul 🗑 puoi cancellare la singola carta\n' +
-      '☁️ Accedi con Google per il backup automatico nel cloud'
-    );
-  }
 </script>
+
 <!-- Bottone (?) istruzioni -->
 <div id="infoHelpBtn" title="Istruzioni">?</div>
 <!-- Bottone (i) privacy/credits -->
 <div id="infoPrivacyBtn" title="Privacy e Credits">i</div>
- 
-<!-- Overlay Privacy e Credits -->
-<div id="privacyOverlay" role="dialog" aria-modal="true">
-  <div id="privacySheet">
-    <div id="privacyHeader">
+
+<!-- Overlay Istruzioni -->
+<div id="istruzioniOverlay" class="sheet-overlay" role="dialog" aria-modal="true">
+  <div class="sheet-box">
+    <div class="sheet-header">
       <div style="width:40px;"></div>
-      <div id="privacyTitle">🔒 Informativa privacy e Credits</div>
-      <button id="privacyClose">✕</button>
+      <div class="sheet-title">📝 Come creare una carta</div>
+      <button id="istruzioniClose" class="sheet-close">✕</button>
     </div>
-    <div id="privacyBody">
+    <div class="sheet-body">
+      <ul>
+        <li>Opzionale: carica uno sfondo personalizzato tramite 📂 Carica sfondo carta</li>
+        <li>Scrivi il testo della carta nel campo apposito: si adatterà automaticamente alle dimensioni della carta</li>
+        <li>Clicca ⬇ Scarica PNG per salvare la carta nella tua galleria</li>
+        <li>Clicca 💾 Salva nel mazzo per aggiungere la carta al tuo mazzo personalizzato</li>
+        <li>Clicca 🗑 Cancella testo per pulire il campo di testo</li>
+        <li>Clicca 🗑 Cancella tutto per eliminare tutte le carte del mazzo</li>
+        <li>Clicca 💾 Backup Mazzo per scaricare tutte le carte (JSON + PNG)</li>
+        <li>Clicca 📂 Importa backup per ripristinare un mazzo da file JSON</li>
+        <li>Clicca sulla carta o su ✏️ per modificarla; clicca una seconda volta per deselezionarla</li>
+        <li>Clicca 🌐 per condividere la carta con la community</li>
+        <li>Clicca 🗑 accanto alla carta per eliminarla dal mazzo</li>
+        <li>☁️ Accedi con Google per il backup automatico nel cloud</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- Overlay Privacy e Credits -->
+<div id="privacyOverlay" class="sheet-overlay" role="dialog" aria-modal="true">
+  <div class="sheet-box">
+    <div class="sheet-header">
+      <div style="width:40px;"></div>
+      <div class="sheet-title">🔒 Informativa privacy e Credits</div>
+      <button id="privacyClose" class="sheet-close">✕</button>
+    </div>
+    <div class="sheet-body">
       <p><b>Porky's Game® — Editor Carte</b> non raccoglie dati per analisi, statistiche o attività di tracciamento.</p>
-      <p>I dati del mazzo personalizzato vengono salvati esclusivamente in locale sul tuo dispositivo tramite localForage. 
-          Se effettui l'accesso con Google, una copia di backup viene sincronizzata sul tuo account Firebase personale e non è accessibile ad altri utenti.</p>
+      <p>I dati del mazzo personalizzato vengono salvati esclusivamente in locale sul tuo dispositivo tramite localForage.
+         Se effettui l'accesso con Google, una copia di backup viene sincronizzata sul tuo account Firebase personale e non è accessibile ad altri utenti.</p>
       <p>Solo in caso di condivisione volontaria con la community, gli altri utenti potranno vedere le tue carte.</p>
       <ul>
         <li><b>Credits:</b> Immagini realizzate con AI e poi perfezionate. Audio recuperati da Myinstants (https://www.myinstants.com).</li>
-
         <li>The MIT License — html2canvas 1.4.1 &lt;https://html2canvas.hertzen.com&gt;<br>
         Copyright (c) 2022 Niklas von Hertzen &lt;https://hertzen.com&gt;<br>
-        Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), 
-        to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, 
-        and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions: 
-        The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software. THE SOFTWARE IS PROVIDED "AS IS", 
-        WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. 
-        IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, 
+        Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"),
+        to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense,
+        and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+        The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software. THE SOFTWARE IS PROVIDED "AS IS",
+        WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+        IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
         OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.</li>
         <li>The MIT License — localForage 1.x<br>
         Copyright (c) 2013-2016 Mozilla<br>
-        Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, 
-        including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, 
-        subject to the following conditions: The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software. THE SOFTWARE IS PROVIDED "AS IS", 
-        WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. 
-        IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, 
+        Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction,
+        including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so,
+        subject to the following conditions: The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software. THE SOFTWARE IS PROVIDED "AS IS",
+        WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+        IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
         OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.</li>
         <li>Carlito font by Łukasz Dziedzic — Licensed under the SIL Open Font License 1.1. Source: https://fonts.google.com/specimen/Carlito</li>
-
-        <li>Firebase SDK — Copyright (c) Google LLC. Use of the Firebase SDK is subject to Google's Terms of Service and Firebase Terms of Service (https://firebase.google.com/terms). 
+        <li>Firebase SDK — Copyright (c) Google LLC. Use of the Firebase SDK is subject to Google's Terms of Service and Firebase Terms of Service (https://firebase.google.com/terms).
             The Firebase JavaScript SDK is licensed under the Apache License 2.0.</li>
       </ul>
-
       <p>
         L'accesso alla fotocamera o alla galleria è richiesto esclusivamente per caricare immagini di sfondo personalizzate per le carte.
-        I file selezionati vengono trasmessi solo come sfondo della carta che hai generato e se decidi di condividere il file anche visti dalla community, 
-        ma nessuno può sapere da quale dispositivo sono stati generati, in quanto sarà cura del software canva ricreare la carta.
+        I file selezionati vengono trasmessi solo come sfondo della carta che hai generato e se decidi di condividere il file anche visti dalla community,
+        ma nessuno può sapere da quale dispositivo sono stati generati, in quanto sarà cura del software canvas ricreare la carta.
         <br>Solo l'Admin della pagina può vedere il nome utente di coloro che hanno generato la carta una volta condivisa.
       </p>
     </div>
   </div>
 </div>
+
 <script>
 (function() {
+  // ── Privacy ──
   const privacyBtn     = document.getElementById('infoPrivacyBtn');
   const privacyOverlay = document.getElementById('privacyOverlay');
   const privacyClose   = document.getElementById('privacyClose');
-  if (!privacyBtn || !privacyOverlay || !privacyClose) return;
-
   function openPrivacy()  { privacyOverlay.style.display = 'flex'; }
   function closePrivacy() { privacyOverlay.style.display = 'none'; }
-
   privacyBtn.addEventListener('click', openPrivacy);
   privacyClose.addEventListener('click', closePrivacy);
   privacyOverlay.addEventListener('click', e => { if (e.target === privacyOverlay) closePrivacy(); });
+
+  // ── Istruzioni ──
+  const helpBtn           = document.getElementById('infoHelpBtn');
+  const istruzioniOverlay = document.getElementById('istruzioniOverlay');
+  const istruzioniClose   = document.getElementById('istruzioniClose');
+  function openIstruzioni()  { istruzioniOverlay.style.display = 'flex'; }
+  function closeIstruzioni() { istruzioniOverlay.style.display = 'none'; }
+  helpBtn.addEventListener('click', openIstruzioni);
+  istruzioniClose.addEventListener('click', closeIstruzioni);
+  istruzioniOverlay.addEventListener('click', e => { if (e.target === istruzioniOverlay) closeIstruzioni(); });
+
+  // Escape chiude l'overlay aperto
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && privacyOverlay.style.display === 'flex') closePrivacy();
+    if (e.key === 'Escape') {
+      if (istruzioniOverlay.style.display === 'flex') closeIstruzioni();
+      else if (privacyOverlay.style.display === 'flex') closePrivacy();
+    }
   });
-})();
 
-// ── Bottone istruzioni ──
-(function() {
-  const helpBtn = document.getElementById('infoHelpBtn');
-  if (!helpBtn) return;
-
-  helpBtn.addEventListener('click', () => window.mostraIstruzioni && window.mostraIstruzioni());
-
-  // mostra al primo accesso o dopo 1 giorno
+  // Mostra istruzioni al primo accesso o dopo 1 giorno
   const ora = Date.now();
   const ultimaVisita = parseInt(localStorage.getItem('porky_last_visit') || '0');
   if (!ultimaVisita || (ora - ultimaVisita) > 24 * 60 * 60 * 1000) {
-    setTimeout(() => window.mostraIstruzioni && window.mostraIstruzioni(), 300);
+    setTimeout(openIstruzioni, 300);
   }
   localStorage.setItem('porky_last_visit', ora);
 })();
 </script>
+
 </body>
 </html>
-
