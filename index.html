@@ -107,7 +107,7 @@ textarea {
   font-size: 1rem;
   padding: 8px 10px;
   resize: vertical;
-  min-height: 130px;
+  min-height: 180px;
   outline: none;
   line-height: 1.4;
   transition: border-color 0.2s, box-shadow 0.2s;
@@ -359,7 +359,7 @@ input[type="file"] { display: none; }
     <h2>✏️ Testo della carta</h2>
     <div>
       <label for="inp-body">Scrivi il testo:</label>
-      <textarea id="inp-body" placeholder="SCRIVI IL TESTO&#10;DELLA CARTA&#10;QUI" oninput="updateCard()"></textarea>
+      <textarea id="inp-body" style="text-align: center;" placeholder="&#10;&#10;&#10;SCRIVI IL TESTO DELLA CARTA&#10;QUI" oninput="updateCard()"></textarea>
       <div class="hint"><br>Il testo si adatta automaticamente alle dimensioni della carta</div>
     </div>
     <button class="btn-dl" id="btn-dl" onclick="downloadCard()">
