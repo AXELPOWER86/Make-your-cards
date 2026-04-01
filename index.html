@@ -509,7 +509,8 @@ input[type="file"] { display: none; }
 <!-- FIREBASE -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
+  import { getRedirectResult } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+  import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged }
     from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
   import { getFirestore, doc, setDoc, getDoc, collection, getDocs, addDoc, updateDoc, increment, query, orderBy, limit }
     from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
@@ -550,11 +551,25 @@ input[type="file"] { display: none; }
     }
   });
 
-  window.loginGoogle = async () => {
+// Gestisci il ritorno dal redirect
+getRedirectResult(auth).then(async result => {
+  if (result && result.user) {
+    // login avvenuto via redirect, già gestito da onAuthStateChanged
+  }
+}).catch(async e => {
+  await customAlert('Errore login:\n' + e.message);
+});
+
+window.loginGoogle = async () => {
   try {
-    await signInWithPopup(auth, new GoogleAuthProvider());
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    if (isMobile) {
+      await signInWithRedirect(auth, new GoogleAuthProvider());
+    } else {
+      await signInWithPopup(auth, new GoogleAuthProvider());
+    }
   } catch(e) {
-    await customAlert('Codice: ' + e.code + '\nMessaggio: ' + e.message);
+    await customAlert('Errore login:\n' + e.message);
   }
 };
 
