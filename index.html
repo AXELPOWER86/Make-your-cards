@@ -579,45 +579,29 @@ window.loginGoogle = async () => {
   if (!_currentUser) return;
   try {
     const snap = await getDoc(doc(db, 'users', _currentUser.uid, 'backup', 'mazzo'));
-    const locale = await localforage.getItem('mazzo_custom') || [];
-
     if (!snap.exists()) {
-      // nessun backup cloud: carica il cloud con quello locale se non vuoto
+      // Nessun backup cloud: carica quello locale sul cloud
+      const locale = await localforage.getItem('mazzo_custom') || [];
       if (locale.length > 0) await window.backupCloud(locale);
       return;
     }
-
     const cloud = snap.data().carte || [];
-    if (cloud.length === 0 && locale.length === 0) return;
+    const locale = await localforage.getItem('mazzo_custom') || [];
 
-    // merge: unisce locale e cloud eliminando duplicati per shash
-    const shashVisti = new Set();
-    const merged = [];
-    for (const carta of [...locale, ...cloud]) {
-      const key = carta.shash || carta.nome;
-      if (!key || shashVisti.has(key)) continue;
-      shashVisti.add(key);
-      merged.push(carta);
-    }
+    // Merge: cloud è fonte di verità, aggiunge eventuali carte locali non ancora sincronizzate
+    const shashVisti = new Set(cloud.map(c => c.shash).filter(Boolean));
+    const soloLocali = locale.filter(c => c.shash && !shashVisti.has(c.shash));
+    const merged = [...cloud, ...soloLocali];
 
-    const localeSize = locale.length;
-    const cloudSize  = cloud.length;
-    const mergedSize = merged.length;
-
-    // salva il merge sia in locale che sul cloud
     await localforage.setItem('mazzo_custom', merged);
     await window.aggiornaListaCustom();
-    await window.backupCloud(merged);
 
-    // notifica solo se ha aggiunto qualcosa
-    const nuoveLocali = mergedSize - localeSize;
-    const nuoveCloud  = mergedSize - cloudSize;
-    if (nuoveLocali > 0) {
-      await customAlert('☁️ Sincronizzazione completata:\n' + nuoveLocali + ' carte aggiunte dal cloud.');
-    } else if (nuoveCloud > 0) {
-      // silenzioso: ha caricato carte locali sul cloud
+    // Se c'erano carte locali non ancora sul cloud, aggiorna il cloud
+    if (soloLocali.length > 0) {
+      await window.backupCloud(merged);
+      await customAlert('☁️ Sincronizzazione completata:\n' + soloLocali.length + ' carte locali caricate sul cloud.');
     }
-  } catch { /* silenzioso */ }
+  } catch(e) { console.error('sincronizzaDaCloud error:', e); }
 }
 
 
