@@ -566,13 +566,32 @@ window.loginGoogle = async () => {
     await signOut(auth);
   };
 
+  async function comprimiImgPerCloud(dataUrl) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const MAX = 400;
+      const ratio = Math.min(MAX / img.width, MAX / img.height, 1);
+      canvas.width  = Math.round(img.width  * ratio);
+      canvas.height = Math.round(img.height * ratio);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', 0.7));
+    };
+    img.src = dataUrl;
+  });
+}
 window.backupCloud = async (mazzo) => {
-  if (!_currentUser) { console.warn('backupCloud: utente non loggato'); return; }
+  if (!_currentUser) return;
   try {
+    const mazzoCloud = await Promise.all(mazzo.map(async carta => ({
+      ...carta,
+      img: await comprimiImgPerCloud(carta.img)
+    })));
     await setDoc(doc(db, 'users', _currentUser.uid, 'backup', 'mazzo'), {
-      carte: mazzo, aggiornato: new Date().toISOString()
+      carte: mazzoCloud, aggiornato: new Date().toISOString()
     });
-    console.log('backupCloud OK:', mazzo.length, 'carte per uid', _currentUser.uid);
+    console.log('backupCloud OK:', mazzoCloud.length, 'carte');
   } catch(e) { console.error('backupCloud ERRORE:', e); }
 };
 
@@ -588,10 +607,6 @@ window.backupCloud = async (mazzo) => {
     }
     const cloud = snap.data().carte || [];
     const locale = await localforage.getItem('mazzo_custom') || [];
-    console.log('CLOUD:', cloud.length, 'carte');
-console.log('LOCALE:', locale.length, 'carte');
-console.log('cloud shash:', cloud.map(c => c.shash));
-console.log('locale shash:', locale.map(c => c.shash));
 
     // Merge: cloud è fonte di verità, aggiunge eventuali carte locali non ancora sincronizzate
     const shashVisti = new Set(cloud.map(c => c.shash).filter(Boolean));
