@@ -570,21 +570,50 @@ input[type="file"] { display: none; }
   };
 
   async function sincronizzaDaCloud() {
-    if (!_currentUser) return;
-    const esistente = await localforage.getItem('mazzo_custom') || [];
-    if (esistente.length > 0) return;
-    try {
-      const snap = await getDoc(doc(db, 'users', _currentUser.uid, 'backup', 'mazzo'));
-      if (snap.exists()) {
-        const dati = snap.data().carte || [];
-        if (dati.length > 0) {
-          await localforage.setItem('mazzo_custom', dati);
-          await window.aggiornaListaCustom();
-          await customAlert('Mazzo ripristinato dal cloud (' + dati.length + ' carte).');
-        }
-      }
-    } catch { /* silenzioso */ }
-  }
+  if (!_currentUser) return;
+  try {
+    const snap = await getDoc(doc(db, 'users', _currentUser.uid, 'backup', 'mazzo'));
+    const locale = await localforage.getItem('mazzo_custom') || [];
+
+    if (!snap.exists()) {
+      // nessun backup cloud: carica il cloud con quello locale se non vuoto
+      if (locale.length > 0) await window.backupCloud(locale);
+      return;
+    }
+
+    const cloud = snap.data().carte || [];
+    if (cloud.length === 0 && locale.length === 0) return;
+
+    // merge: unisce locale e cloud eliminando duplicati per shash
+    const shashVisti = new Set();
+    const merged = [];
+    for (const carta of [...locale, ...cloud]) {
+      const key = carta.shash || carta.nome;
+      if (!key || shashVisti.has(key)) continue;
+      shashVisti.add(key);
+      merged.push(carta);
+    }
+
+    const localeSize = locale.length;
+    const cloudSize  = cloud.length;
+    const mergedSize = merged.length;
+
+    // salva il merge sia in locale che sul cloud
+    await localforage.setItem('mazzo_custom', merged);
+    await window.aggiornaListaCustom();
+    await window.backupCloud(merged);
+
+    // notifica solo se ha aggiunto qualcosa
+    const nuoveLocali = mergedSize - localeSize;
+    const nuoveCloud  = mergedSize - cloudSize;
+    if (nuoveLocali > 0) {
+      await customAlert('☁️ Sincronizzazione completata:\n' + nuoveLocali + ' carte aggiunte dal cloud.');
+    } else if (nuoveCloud > 0) {
+      // silenzioso: ha caricato carte locali sul cloud
+    }
+  } catch { /* silenzioso */ }
+}
+
 
   // ── COMMUNITY ──
   window.apriCommunity = async () => {
