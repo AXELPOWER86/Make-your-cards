@@ -551,9 +551,26 @@ input[type="file"] { display: none; }
   });
 
   window.loginGoogle = async () => {
-    try { await signInWithPopup(auth, new GoogleAuthProvider()); }
-    catch(e) { await customAlert('Errore login:\n' + e.message); }
-  };
+  try {
+    await signInWithPopup(auth, new GoogleAuthProvider());
+  } catch(e) {
+    if (e.code === 'auth/cancelled-popup-request' || 
+        e.code === 'auth/popup-closed-by-user') {
+      return; // utente ha chiuso il popup, silenzioso
+    }
+    if (e.code === 'auth/invalid-action') {
+      // riprova una volta dopo breve pausa
+      try {
+        await new Promise(r => setTimeout(r, 500));
+        await signInWithPopup(auth, new GoogleAuthProvider());
+      } catch(e2) {
+        await customAlert('Errore login:\n' + e2.message);
+      }
+      return;
+    }
+    await customAlert('Errore login:\n' + e.message);
+  }
+};
 
   window.logoutGoogle = async () => {
     if (!await customConfirm({ message: 'Disconnettersi da Google?', okText: 'SI', cancelText: 'NO' })) return;
