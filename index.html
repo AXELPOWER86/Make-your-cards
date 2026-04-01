@@ -591,7 +591,6 @@ window.backupCloud = async (mazzo) => {
     await setDoc(doc(db, 'users', _currentUser.uid, 'backup', 'mazzo'), {
       carte: mazzoCloud, aggiornato: new Date().toISOString()
     });
-    console.log('backupCloud OK:', mazzoCloud.length, 'carte');
   } catch(e) { console.error('backupCloud ERRORE:', e); }
 };
 
@@ -755,9 +754,10 @@ window.backupCloud = async (mazzo) => {
       if (_communityCards.some(c => c.shash === carta.shash)) {
         await customAlert('Questa carta è già presente nella community.'); return;
       }
+      const imgCloud = await comprimiImgPerCloud(carta.img);
       await addDoc(collection(db, 'community'), {
         testo: carta.testo || '',
-        img: carta.img,
+        img: imgCloud,
         shash: carta.shash || '',
         nome: carta.nome || '',
         autore: _currentUser.displayName || _currentUser.email,
