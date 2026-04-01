@@ -587,6 +587,10 @@ window.loginGoogle = async () => {
     }
     const cloud = snap.data().carte || [];
     const locale = await localforage.getItem('mazzo_custom') || [];
+    console.log('CLOUD:', cloud.length, 'carte');
+console.log('LOCALE:', locale.length, 'carte');
+console.log('cloud shash:', cloud.map(c => c.shash));
+console.log('locale shash:', locale.map(c => c.shash));
 
     // Merge: cloud è fonte di verità, aggiunge eventuali carte locali non ancora sincronizzate
     const shashVisti = new Set(cloud.map(c => c.shash).filter(Boolean));
