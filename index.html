@@ -566,14 +566,15 @@ window.loginGoogle = async () => {
     await signOut(auth);
   };
 
-  window.backupCloud = async (mazzo) => {
-    if (!_currentUser) return;
-    try {
-      await setDoc(doc(db, 'users', _currentUser.uid, 'backup', 'mazzo'), {
-        carte: mazzo, aggiornato: new Date().toISOString()
-      });
-    } catch { /* silenzioso */ }
-  };
+window.backupCloud = async (mazzo) => {
+  if (!_currentUser) { console.warn('backupCloud: utente non loggato'); return; }
+  try {
+    await setDoc(doc(db, 'users', _currentUser.uid, 'backup', 'mazzo'), {
+      carte: mazzo, aggiornato: new Date().toISOString()
+    });
+    console.log('backupCloud OK:', mazzo.length, 'carte per uid', _currentUser.uid);
+  } catch(e) { console.error('backupCloud ERRORE:', e); }
+};
 
   async function sincronizzaDaCloud() {
   if (!_currentUser) return;
