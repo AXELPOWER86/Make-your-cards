@@ -561,17 +561,12 @@ getRedirectResult(auth).then(async result => {
 
 window.loginGoogle = async () => {
   try {
-    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-    if (isMobile) {
-      await signInWithRedirect(auth, new GoogleAuthProvider());
-    } else {
-      await signInWithPopup(auth, new GoogleAuthProvider());
-    }
+    const provider = new GoogleAuthProvider();
+    await signInWithPopup(auth, provider);
   } catch(e) {
-    await customAlert('Errore login:\n' + e.message);
+    await customAlert('Errore login:\nCODE: ' + e.code + '\n' + e.message);
   }
 };
-
 
   window.logoutGoogle = async () => {
     if (!await customConfirm({ message: 'Disconnettersi da Google?', okText: 'SI', cancelText: 'NO' })) return;
