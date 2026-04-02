@@ -34,10 +34,10 @@ html { scrollbar-width: none; overflow-y: auto; }
 html::-webkit-scrollbar, body::-webkit-scrollbar { width:0; height:0; }
 
 body {
-font-family: ‘Carlito’, Arial, sans-serif;
+font-family: 'Carlito', Arial, sans-serif;
 text-align: center;
 min-height: 100vh;
-background: linear-gradient(rgba(215,175,90,0.85), rgba(215,175,90,0.85)), url(“images/logo_splash.png”);
+background: linear-gradient(rgba(215,175,90,0.85), rgba(215,175,90,0.85)), url("images/logo_splash.png");
 background-repeat: no-repeat;
 background-position: center;
 background-size: cover;
@@ -103,7 +103,7 @@ background: #fff;
 border: 2px solid #502369;
 border-radius: 8px;
 color: #333;
-font-family: ‘Carlito’, Arial, sans-serif;
+font-family: 'Carlito', Arial, sans-serif;
 font-weight: bold;
 font-size: 1rem;
 padding: 8px 10px;
@@ -160,12 +160,12 @@ display: flex; flex-direction: column; align-items: center;
 overflow: hidden; pointer-events: none;
 }
 #card-body {
-font-family: ‘Carlito’, Arial, sans-serif; font-weight: 900; color: #f5e6c8;
+font-family: 'Carlito', Arial, sans-serif; font-weight: 900; color: #f5e6c8;
 text-align: center; width: 100%; flex: 1; display: flex;
 align-items: center; justify-content: center; overflow: hidden; padding: 0 4px;
 }
 #card-body-inner {
-font-family: ‘Carlito’, Arial, Helvetica, sans-serif;
+font-family: 'Carlito', Arial, Helvetica, sans-serif;
 font-weight: 900;
 color: #f5e6c8;
 text-align: center;
@@ -222,7 +222,7 @@ display: flex; flex-direction: column; gap: 12px;
 #communityBox h2 { color: #502369; margin: 0; font-size: 18px; border-bottom: 2px solid #502369; padding-bottom: 8px; }
 #community-search {
 width: 100%; padding: 8px 12px; border: 2px solid #502369; border-radius: 8px;
-font-size: 14px; font-family: ‘Carlito’, Arial, sans-serif;
+font-size: 14px; font-family: 'Carlito', Arial, sans-serif;
 background: #fff; color: #333; outline: none;
 user-select: text; -webkit-user-select: text;
 }
@@ -645,12 +645,14 @@ box-shadow: 0 16px 40px rgba(0,0,0,.25); user-select: none;
     } catch(e) { console.error('backupCloud ERRORE:', e); }
   };
 
-  
-function dedupCarte(arr) {
+  function dedupCarte(arr) {
   const map = new Map();
   arr.forEach(c => {
     const key = c.shash || c.id;
-    if (!map.has(key)) map.set(key, c);
+    const existing = map.get(key);
+    if (!existing || (c.updatedAt || 0) > (existing.updatedAt || 0)) {
+      map.set(key, c);
+    }
   });
   return Array.from(map.values());
 }
@@ -781,11 +783,6 @@ async function sincronizzaDaCloud() {
   };
 
   async function importaDaCommunity(carta) {
-  const exists = (_communityCards || []).some(c => (c.shash || c.id) === (carta.shash || carta.id));
-  if (exists) {
-    customAlert("Carta già presente nel mazzo");
-    return;
-  }
     const esistente = await localforage.getItem('mazzo_custom') || [];
     if (esistente.some(c => c.shash === carta.shash)) {
       await customAlert('Questa carta è già nel tuo mazzo.'); return;
