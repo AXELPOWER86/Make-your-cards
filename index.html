@@ -645,7 +645,17 @@ box-shadow: 0 16px 40px rgba(0,0,0,.25); user-select: none;
     } catch(e) { console.error('backupCloud ERRORE:', e); }
   };
 
-  async function sincronizzaDaCloud() {
+  
+function dedupCarte(arr) {
+  const map = new Map();
+  arr.forEach(c => {
+    const key = c.shash || c.id;
+    if (!map.has(key)) map.set(key, c);
+  });
+  return Array.from(map.values());
+}
+
+async function sincronizzaDaCloud() {
     if (!_currentUser) return;
     try {
       const snap = await getDoc(doc(db, 'users', _currentUser.uid, 'backup', 'mazzo'));
@@ -658,7 +668,7 @@ box-shadow: 0 16px 40px rgba(0,0,0,.25); user-select: none;
       const locale = await localforage.getItem('mazzo_custom') || [];
       const shashVisti = new Set(cloud.map(c => c.shash).filter(Boolean));
       const soloLocali = locale.filter(c => c.shash && !shashVisti.has(c.shash));
-      const merged = [...cloud, ...soloLocali];
+      const merged = dedupCarte([...cloud, ...soloLocali]);
       await localforage.setItem('mazzo_custom', merged);
       await window.aggiornaListaCustom();
       if (soloLocali.length > 0) {
@@ -771,6 +781,11 @@ box-shadow: 0 16px 40px rgba(0,0,0,.25); user-select: none;
   };
 
   async function importaDaCommunity(carta) {
+  const exists = (_communityCards || []).some(c => (c.shash || c.id) === (carta.shash || carta.id));
+  if (exists) {
+    customAlert("Carta già presente nel mazzo");
+    return;
+  }
     const esistente = await localforage.getItem('mazzo_custom') || [];
     if (esistente.some(c => c.shash === carta.shash)) {
       await customAlert('Questa carta è già nel tuo mazzo.'); return;
