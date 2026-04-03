@@ -1129,9 +1129,16 @@ input[type="file"] { display: none; }
       }
 
       const cartaInModifica = esistente.find(c => c._inModifica);
-      const nome = cartaInModifica ? cartaInModifica.nome : 'carta_custom_' + shash.slice(0, 8) + '.png';
-      // Preserva communityId se la carta era già condivisa
-      const communityId = cartaInModifica ? (cartaInModifica.communityId || null) : null;
+      const nome = cartaInModifica
+        ? cartaInModifica.nome
+        : 'carta_custom_' + shash.slice(0, 8) + '.png';
+      const communityId = cartaInModifica
+        ? (cartaInModifica.communityId || null)
+        : null;
+      // Se c'era una carta in modifica con shash diverso, va nei tombstone
+      const vecchioShash = (cartaInModifica && cartaInModifica.shash !== shash)
+        ? cartaInModifica.shash
+        : null;
 
       const carta = {
         hash: null, phash: null, shash, lphash256: null,
@@ -1141,11 +1148,17 @@ input[type="file"] { display: none; }
 
       const mazzoFinale = esistente.filter(c => !c._inModifica);
       mazzoFinale.push(carta);
+
       await localforage.setItem(CUSTOM_KEY, mazzoFinale);
       await aggiornaListaCustom();
 
-      // Backup cloud
-      if (window.backupCloud) await window.backupCloud(mazzoFinale);
+      // Backup cloud: passa vecchioShash come tombstone se la carta è stata modificata
+      if (window.backupCloud) {
+        await window.backupCloud(
+          mazzoFinale,
+          vecchioShash ? [vecchioShash] : []
+        );
+      }
 
       // Se la carta era condivisa in community, aggiorna automaticamente anche lì
       if (communityId && window.condividiInCommunity) {
