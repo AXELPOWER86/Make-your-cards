@@ -1310,6 +1310,44 @@ async function modificaCarta(idx) {
   document.getElementById('preview-share-wrap').style.display = 'block';
 }
 
+// ── Listener globale da avviare all'inizio dell'app ──
+function avviaListenerBackupCloud() {
+  if (!_currentUser) return;
+
+  const ref = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo');
+
+  // Realtime listener su document backup
+  onSnapshot(ref, async (snap) => {
+    if (!snap.exists()) return;
+
+    const data = snap.data();
+    const mazzoCloud = data.carte || [];
+    const cloudTombstones = data.tombstones || {};
+
+    // Aggiorna tombstones locali
+    const tombstones = await getTombstones();
+    let tombstonesAggiornati = { ...tombstones, ...cloudTombstones };
+    await setTombstones(tombstonesAggiornati);
+
+    // Aggiorna mazzo locale
+    let mazzoLocale = await localforage.getItem(CUSTOM_KEY) || [];
+
+    // Filtra carte cancellate
+    mazzoLocale = mazzoLocale.filter(c => !tombstonesAggiornati[c.shash]);
+
+    // Aggiungi eventuali carte nuove dal cloud
+    const shashLocale = new Set(mazzoLocale.map(c => c.shash));
+    const nuoveCarte = mazzoCloud.filter(c => c.shash && !shashLocale.has(c.shash));
+    if (nuoveCarte.length) {
+      mazzoLocale = [...mazzoLocale, ...nuoveCarte];
+    }
+
+    await localforage.setItem(CUSTOM_KEY, mazzoLocale);
+    await aggiornaListaCustom();
+  });
+}
+
+// ── Funzione eliminaCarta aggiornata ──
 async function eliminaCarta(idx) {
   const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
   const carta = mazzo[idx];
@@ -1332,21 +1370,8 @@ async function eliminaCarta(idx) {
     await setTombstones(tombstones);
   }
 
-  // Aggiorna il cloud anche se offline tramite "backupCloud deferred"
-  const task = async () => {
-    await backupCloud(mazzo, carta.shash ? [carta.shash] : []);
-    await sincronizzaDaCloud(true);
-  };
-
-  if (navigator.onLine) {
-    await task();
-  } else {
-    // se offline, esegui al ritorno online
-    window.addEventListener('online', async function onOnline() {
-      window.removeEventListener('online', onOnline);
-      await task();
-    });
-  }
+  // Backup immediato sul cloud
+  await backupCloud(mazzo, carta.shash ? [carta.shash] : []);
 }
 
 document.getElementById('btn-cancella-tutto').addEventListener('click', async () => {
