@@ -645,6 +645,8 @@ let _syncInterval = null;
 // ── Merge cloud corretto (sincronizzaDaCloud) ──
 async function sincronizzaDaCloud(silenzioso = false) {
   if (!_currentUser) return;
+  if (_syncLock) return; // evita esecuzioni parallele
+  _syncLock = true;
   try {
     const ref  = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo');
     const snap = await getDoc(ref);
@@ -745,6 +747,7 @@ async function sincronizzaDaCloud(silenzioso = false) {
     }
 
   } catch(e) { console.error('sincronizzaDaCloud error:', e); }
+  finally { _syncLock = false; }
 }
 
 // Avvia sync automatico ogni 60 secondi quando l'utente è loggato
@@ -775,9 +778,7 @@ onAuthStateChanged(auth, async user => {
     btnLogin.style.display  = 'none';
     btnLogout.style.display = 'inline-block';
     btnCom.style.display    = 'inline-block';
-    // Sincronizza all'avvio (silenzioso: niente popup se non ci sono novità)
-    await sincronizzaDaCloud(true);
-    await new Promise(r => setTimeout(r, 300));
+    // Sincronizza all'avvio
     await sincronizzaDaCloud(true);
     await aggiornaListaCustom();
     await tentaRipristinoAutomatico();
@@ -931,11 +932,8 @@ async function importaDaCommunity(carta) {
   await localforage.setItem(CUSTOM_KEY, esistente);
   await aggiornaListaCustom();
 
-  // Backup immediato
+  // Backup immediato — il listener onSnapshot propagherà agli altri dispositivi
   await backupCloud(esistente);
-
-  // Sincronizza subito da cloud → locale
-  await sincronizzaDaCloud(true);
 
   await customAlert('Carta importata nel mazzo!');
 }
@@ -1211,9 +1209,6 @@ document.getElementById('btn-salva').addEventListener('click', async () => {
     const tombstones = vecchioShash ? { [vecchioShash]: Date.now() } : {};
     await backupCloud(mazzoFinale, vecchioShash ? [vecchioShash] : []);
 
-    // Forza la sincronizzazione subito dopo il backup, così la carta arriva anche sugli altri dispositivi
-    await sincronizzaDaCloud(true);
-
     // Se la carta era condivisa in community, aggiorna automaticamente anche lì
     if (communityId) await condividiInCommunity(carta);
 
@@ -1310,6 +1305,7 @@ async function modificaCarta(idx) {
 
 // ── Listener realtime: propaga modifiche cloud → locale in tempo reale ──
 let _unsubscribeSnapshot = null;
+let _syncLock = false; // evita race condition tra listener e sincronizzaDaCloud
 
 function avviaListenerBackupCloud() {
   if (!_currentUser) return;
@@ -1319,6 +1315,7 @@ function avviaListenerBackupCloud() {
 
   _unsubscribeSnapshot = onSnapshot(ref, async (snap) => {
     if (!snap.exists()) return;
+    if (_syncLock) return; // sync in corso, salta questo evento
 
     const data = snap.data();
     const mazzoCloud = data.carte || [];
@@ -1495,13 +1492,13 @@ document.getElementById('inp-backup').addEventListener('change', async event => 
         await customAlert('Importate ' + nuove.length + ' carte nuove, ' + (dati.length - nuove.length) + ' duplicate ignorate.');
         await aggiornaListaCustom();
         await backupCloud(await localforage.getItem(CUSTOM_KEY));
-        await sincronizzaDaCloud(true);
         return;
       }
     } else {
       await localforage.setItem(CUSTOM_KEY, dati);
     }
     await aggiornaListaCustom();
+    await backupCloud(await localforage.getItem(CUSTOM_KEY));
     await customAlert('Backup importato: ' + dati.length + ' carte.');
   } catch(e) { await customAlert('Errore importazione:\n' + e.message); }
 });
