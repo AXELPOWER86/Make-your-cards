@@ -636,6 +636,7 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
     _deletedShashes = merged;
     const mazzoCloud = await Promise.all(mazzo.map(async carta => ({
       ...carta,
+      savedAt: carta.savedAt || 1,
       img: await comprimiImgPerCloud(carta.img)
     })));
     await setDoc(docRef, {
@@ -669,7 +670,9 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
       : rawDeleted;
     // Carica in memoria così backupCloud successivi conservano i tombstone
     _deletedShashes = { ...cloudDeleted };
-    const locale      = await localforage.getItem('mazzo_custom') || [];
+    const localeRaw   = await localforage.getItem('mazzo_custom') || [];
+    // Normalizza savedAt sulle carte locali vecchie: senza savedAt → savedAt=1 (passato assoluto)
+    const locale      = localeRaw.map(c => c.savedAt ? c : { ...c, savedAt: 1 });
     const pending     = await localforage.getItem('mazzo_pending_ops') || [];
 
     // Tombstone offline: { shash → ts } da pending ops
@@ -685,14 +688,18 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
     }
     _deletedShashes = { ...tuttiDeleted };
 
+    // Assegna savedAt retroattivo alle carte cloud senza: usiamo 1 (passato assoluto)
+    // così qualsiasi tombstone futuro le sovrascrive correttamente
+    const cloudNormalizzato = cloud.map(c => c.savedAt ? c : { ...c, savedAt: 1 });
+
     // Base: carte cloud — sopravvive solo se NON in tuttiDeleted
     // oppure se savedAt è più recente del tombstone (carta ricreata dopo cancellazione)
-    let merged = cloud
+    let merged = cloudNormalizzato
       .filter(c => {
         if (!c.shash) return true;
         const delTs = tuttiDeleted[c.shash];
         if (delTs === undefined) return true;
-        return (c.savedAt || 0) > delTs;
+        return c.savedAt > delTs;
       })
       .map(c => {
         if (pendingUpdated[c.shash]) {
@@ -709,7 +716,9 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
       if (!c.shash || cloudShash.has(c.shash) || replacedShashes.has(c.shash)) return false;
       const delTs = tuttiDeleted[c.shash];
       if (delTs === undefined) return true;
-      return (c.savedAt || 0) > delTs;
+      // Carta locale senza savedAt + tombstone presente: va eliminata, non sappiamo quando è stata creata
+      if (!c.savedAt) return false;
+      return c.savedAt > delTs;
     });
     merged = [...merged, ...soloLocali];
 
