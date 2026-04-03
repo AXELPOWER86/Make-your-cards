@@ -1040,6 +1040,11 @@ window.backupCloud = async (mazzo) => {
       await localforage.setItem(CUSTOM_KEY, mazzoFinale);
       await aggiornaListaCustom();
       if (window.backupCloud) await window.backupCloud(mazzoFinale);
+      // Se la carta era condivisa in community, aggiorna anche lì
+      if (communityId && window.condividiInCommunity) {
+        await window.condividiInCommunity(carta);
+      }
+      document.getElementById('preview-share-wrap').style.display = 'none';
       resetAll();
     } catch(e) {
       await customAlert('Errore salvataggio.\n' + e.message);
