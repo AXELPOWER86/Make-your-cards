@@ -578,52 +578,32 @@ function comprimiImgPerCloud(dataUrl) {
 }
 
 // ═══════════════════════════════════════════════════════
-// CHIAVE UNIVOCA PER UNA CARTA (usata in tutto il merge)
-// Priorità: shash (non vuoto) > nome > testo normalizzato
-// ═══════════════════════════════════════════════════════
-function cartaKey(c) {
-  if (c.shash && c.shash.trim()) return 'sh:' + c.shash.trim();
-  if (c.nome  && c.nome.trim())  return 'nm:' + c.nome.trim();
-  const t = (c.testo || '').toUpperCase().trim();
-  if (t)                         return 'tx:' + t;
-  return null;
-}
-
-// ═══════════════════════════════════════════════════════
 // BACKUP CLOUD
-// Scrive il mazzo sul cloud con i tombstone aggiornati.
-// Le img vengono compresse per risparmiare spazio.
-// tombstoneExtra: shash aggiuntivi da marcare come cancellati.
+// tombstoneExtra: array di shash da aggiungere ai tombstone prima di scrivere
+// Merge bidirezionale: il cloud NON viene mai sovrascritto con solo il locale.
+// Scrive il mazzo sul cloud (senza merge interno — merge fatto da sincronizzaDaCloud).
+// tombstoneExtra: shash da aggiungere ai tombstone prima di scrivere.
 // ═══════════════════════════════════════════════════════
 async function backupCloud(mazzo, tombstoneExtra = []) {
   if (!_currentUser) return;
   try {
     const ref = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo');
-    const now = Date.now();
 
-    // Leggi tombstone cloud per non perderli mai (merge con quelli locali)
+    // Leggi solo i tombstone cloud per non perderli mai
+    const snap = await getDoc(ref);
+    const cloudTombstones = snap.exists() ? (snap.data().tombstones || {}) : {};
     let tombstones = await getTombstones();
-    try {
-      const snap = await getDoc(ref);
-      if (snap.exists()) {
-        const cloudT = snap.data().tombstones || {};
-        for (const [s, ts] of Object.entries(cloudT)) {
-          if (!tombstones[s] || ts > tombstones[s]) tombstones[s] = ts;
-        }
-      }
-    } catch(_) { /* se offline: usa solo tombstone locali */ }
-
-    for (const s of tombstoneExtra) {
-      if (s && s.trim() && !tombstones[s]) tombstones[s] = now;
+    for (const [s, ts] of Object.entries(cloudTombstones)) {
+      if (!tombstones[s] || ts > tombstones[s]) tombstones[s] = ts;
     }
+    const now = Date.now();
+    for (const s of tombstoneExtra) if (!tombstones[s]) tombstones[s] = now;
     tombstones = purgaTombstones(tombstones);
     await setTombstones(tombstones);
 
+    // Comprimi e scrivi — il mazzo passato è già il risultato del merge
     const mazzoCloud = await Promise.all(
-      mazzo.map(async c => {
-        const { _inModifica, ...rest } = c;
-        return { ...rest, img: await comprimiImgPerCloud(c.img), savedAt: c.savedAt || now };
-      })
+      mazzo.map(async c => ({ ...c, img: await comprimiImgPerCloud(c.img) }))
     );
     await setDoc(ref, { carte: mazzoCloud, tombstones, aggiornato: now });
   } catch(e) { console.error('backupCloud ERRORE:', e); }
@@ -631,34 +611,32 @@ async function backupCloud(mazzo, tombstoneExtra = []) {
 
 // ═══════════════════════════════════════════════════════
 // SINCRONIZZAZIONE DA CLOUD
-// Merge bidirezionale completo:
-//  - Ogni carta identificata da cartaKey() (shash > nome > testo)
-//  - Vince savedAt più alto; a parità → locale ha priorità
-//  - Tombstone (shash-only) prevalgono sempre
-//  - Le carte cloud arrivano con img compressa → vengono usate solo
-//    se il locale non ha già quella carta (così non sovrascriviamo
-//    la full-res locale con una versione compressa)
-//  - Sincronizzazione automatica ogni 60s se loggato
+// Merge bidirezionale: locale + cloud si fondono sempre.
+// Nessuna delle due fonti è "fonte di verità assoluta".
+// Regola di merge per carte con lo stesso shash:
+//   - vince quella con savedAt più alto
+//   - se entrambe hanno savedAt=0 (carte vecchie), la carta locale vince
+//     (è sul dispositivo corrente, va comunque caricata sul cloud)
+// I tombstone prevalgono sempre su qualsiasi carta.
 // ═══════════════════════════════════════════════════════
-let _syncInterval = null;
-
-async function sincronizzaDaCloud(silenzioso = false) {
+async function sincronizzaDaCloud() {
   if (!_currentUser) return;
   try {
     const ref  = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo');
     const snap = await getDoc(ref);
 
-    // ── Normalizza locale: assegna savedAt alle carte che non ce l'hanno ──
+    // Leggi il locale; assegna savedAt=1 alle carte vecchie che non ce l'hanno
+    // (1 è meno di qualsiasi timestamp reale → perde contro carte con savedAt vero,
+    //  ma permette comunque di identificarle come "esistenti")
     let locale = await localforage.getItem(CUSTOM_KEY) || [];
     let localeModificato = false;
-    const now = Date.now();
     locale = locale.map(c => {
-      if (!c.savedAt) { localeModificato = true; return { ...c, savedAt: now }; }
+      if (!c.savedAt) { localeModificato = true; return { ...c, savedAt: 1 }; }
       return c;
     });
     if (localeModificato) await localforage.setItem(CUSTOM_KEY, locale);
 
-    // ── Primo login / nessun backup → carica il locale e fine ──
+    // Primo login: nessun backup cloud → carica locale sul cloud
     if (!snap.exists()) {
       if (locale.length > 0) await backupCloud(locale);
       return;
@@ -667,7 +645,7 @@ async function sincronizzaDaCloud(silenzioso = false) {
     const data       = snap.data();
     const cloudCarte = data.carte || [];
 
-    // ── Merge tombstones ──────────────────────────────────────
+    // Merge tombstone: cloud + locali → vince il più recente, poi purga vecchi
     const cloudTombstones = data.tombstones || {};
     const localTombstones = await getTombstones();
     let tombstones = { ...cloudTombstones };
@@ -677,110 +655,56 @@ async function sincronizzaDaCloud(silenzioso = false) {
     tombstones = purgaTombstones(tombstones);
     await setTombstones(tombstones);
 
-    const isTombstoned = (c) => c.shash && c.shash.trim() && tombstones[c.shash.trim()];
-
-    // ── Costruisci indice locale per confronto veloce ─────────
-    const localeMap = new Map();
-    for (const c of locale) {
-      const k = cartaKey(c);
-      if (k) localeMap.set(k, c);
-    }
-
-    // ── Merge: partiamo dal locale, integriamo il cloud ───────
-    // REGOLA FONDAMENTALE:
-    //   - Carta solo nel cloud  → aggiungila al locale (usa img cloud, è l'unica disponibile)
-    //   - Carta solo nel locale → rimane, verrà caricata sul cloud
-    //   - Carta in entrambi    → vince savedAt maggiore; a parità vince locale (full-res)
-    //                            Se vince cloud: preserva img locale e aggiorna il resto
-
+    // Merge bidirezionale con indice per shash e nome
+    // Unione: ogni carta presente in almeno una delle due fonti compare nel risultato.
+    // Per carte presenti in entrambe: vince savedAt maggiore.
+    // I tombstone escludono le carte indipendentemente dalla fonte.
     const mergeMap = new Map();
 
-    // Prima inseriamo tutte le carte locali
-    for (const c of locale) {
-      if (isTombstoned(c)) continue;
-      const k = cartaKey(c);
-      if (!k) continue;
-      mergeMap.set(k, c);
-    }
-
-    // Poi integriamo le carte cloud
-    let carteNuoveDaCloud = 0;
-    let carteAggiornateDaCloud = 0;
-    for (const cc of cloudCarte) {
-      if (isTombstoned(cc)) continue;
-      const k = cartaKey(cc);
-      if (!k) continue;
-
-      if (!mergeMap.has(k)) {
-        // Carta presente solo sul cloud → aggiungila al locale con img cloud
-        mergeMap.set(k, { ...cc, savedAt: cc.savedAt || now });
-        carteNuoveDaCloud++;
-      } else {
-        // Carta presente in entrambi → confronta savedAt
-        const loc = mergeMap.get(k);
-        const locSaved   = loc.savedAt || 0;
-        const cloudSaved = cc.savedAt  || 0;
-        if (cloudSaved > locSaved) {
-          // Cloud è più recente: aggiorna metadati ma preserva img locale (full-res)
-          mergeMap.set(k, { ...cc, img: loc.img, savedAt: cloudSaved });
-          carteAggiornateDaCloud++;
-        }
-        // Locale >= cloud → il locale rimane invariato
+    const aggiungi = (c, sovrascrivi) => {
+      if (c.shash && tombstones[c.shash]) return; // tombstoned → ignora
+      const key = c.shash || c.nome;
+      if (!key) return;
+      if (!mergeMap.has(key)) { mergeMap.set(key, c); return; }
+      if (sovrascrivi) {
+        const ex = mergeMap.get(key);
+        if ((c.savedAt || 0) > (ex.savedAt || 0)) mergeMap.set(key, c);
+        // Se savedAt uguale: non sovrascrivere (mantieni la prima aggiunta = cloud)
       }
-    }
+    };
+
+    // Inserisci prima le carte cloud, poi le locali con confronto savedAt
+    for (const c of cloudCarte) aggiungi(c, false);
+    for (const c of locale)     aggiungi(c, true);
 
     const mazzoFinale = [...mergeMap.values()];
 
-    // ── Aggiorna locale solo se ci sono davvero modifiche ─────
-    const localeNeedsUpdate = carteNuoveDaCloud > 0 || carteAggiornateDaCloud > 0 || localeModificato;
-    if (localeNeedsUpdate) {
-      await localforage.setItem(CUSTOM_KEY, mazzoFinale);
-      await aggiornaListaCustom();
-    }
+    // Conta quante carte vengono da ciascuna fonte (per la notifica)
+    const cloudShashes = new Set(cloudCarte.map(c => c.shash).filter(Boolean));
+    const localeShashes = new Set(locale.map(c => c.shash).filter(Boolean));
+    const soloLocali = mazzoFinale.filter(c => c.shash && !cloudShashes.has(c.shash));
+    const soloCloud  = mazzoFinale.filter(c => c.shash && !localeShashes.has(c.shash));
 
-    // ── Aggiorna cloud se il locale aveva carte non presenti sul cloud ─
-    const cloudKeys = new Set(cloudCarte.map(cartaKey).filter(Boolean));
-    const nuovePerCloud = mazzoFinale.filter(c => {
-      const k = cartaKey(c);
-      return k && !cloudKeys.has(k);
-    });
+    // Aggiorna locale
+    await localforage.setItem(CUSTOM_KEY, mazzoFinale);
+    await aggiornaListaCustom();
+
+    // Scrivi cloud con il mazzo merged (solo se c'è qualcosa da aggiornare)
     const cloudNeedsUpdate =
-      nuovePerCloud.length > 0 ||
+      soloLocali.length > 0 ||
       localeModificato ||
       Object.keys(cloudTombstones).length !== Object.keys(tombstones).length;
     if (cloudNeedsUpdate) await backupCloud(mazzoFinale);
 
-    // ── Notifica ───────────────────────────────────────────────
-    if (!silenzioso) {
-      const n = carteNuoveDaCloud + carteAggiornateDaCloud + nuovePerCloud.length;
-      if (n > 0) {
-        const parti = [];
-        if (carteNuoveDaCloud > 0)      parti.push(carteNuoveDaCloud + ' carte nuove arrivate dal cloud');
-        if (carteAggiornateDaCloud > 0) parti.push(carteAggiornateDaCloud + ' carte aggiornate dal cloud');
-        if (nuovePerCloud.length > 0)   parti.push(nuovePerCloud.length + ' carte locali caricate sul cloud');
-        await customAlert('☁️ Sincronizzazione:\n' + parti.join('\n'));
-      }
+    // Notifica solo se c'è stato un effettivo trasferimento di carte
+    const n = soloLocali.length + soloCloud.length;
+    if (n > 0) {
+      const parti = [];
+      if (soloLocali.length > 0) parti.push(soloLocali.length + ' carte locali → cloud');
+      if (soloCloud.length  > 0) parti.push(soloCloud.length  + ' carte cloud → locale');
+      await customAlert('☁️ Sincronizzazione completata:\n' + parti.join('\n'));
     }
   } catch(e) { console.error('sincronizzaDaCloud error:', e); }
-}
-
-// Avvia sync automatico ogni 60 secondi quando l'utente è loggato
-function avviaAutoSync() {
-  fermaAutoSync();
-  _syncInterval = setInterval(async () => {
-    if (!_currentUser) return;
-
-    // 🔴 prima push locale → cloud
-    const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
-    await backupCloud(mazzo);
-
-    // 🔴 poi pull cloud → locale
-    await sincronizzaDaCloud(true);
-
-  }, 15000); // ogni 15 secondi
-}
-function fermaAutoSync() {
-  if (_syncInterval) { clearInterval(_syncInterval); _syncInterval = null; }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -798,16 +722,10 @@ onAuthStateChanged(auth, async user => {
     btnLogin.style.display  = 'none';
     btnLogout.style.display = 'inline-block';
     btnCom.style.display    = 'inline-block';
-    // Sincronizza all'avvio (silenzioso: niente popup se non ci sono novità)
-    await sincronizzaDaCloud(true);
-    await new Promise(r => setTimeout(r, 300));
-    await sincronizzaDaCloud(true);
+    await sincronizzaDaCloud();
     await aggiornaListaCustom();
     await tentaRipristinoAutomatico();
-    // Avvia sync automatico ogni 60s
-    avviaAutoSync();
   } else {
-    fermaAutoSync();
     loginInfo.textContent   = 'Non connesso';
     btnLogin.style.display  = 'inline-block';
     btnLogout.style.display = 'none';
@@ -829,14 +747,7 @@ document.getElementById('btn-logout').addEventListener('click', async () => {
 });
 
 window.addEventListener('online', async () => {
-  if (_currentUser) await sincronizzaDaCloud(true);
-});
-
-// Sync quando l'app torna in foreground (es. si riapre il tab/app)
-document.addEventListener('visibilitychange', async () => {
-  if (document.visibilityState === 'visible' && _currentUser) {
-    await sincronizzaDaCloud(true);
-  }
+  if (_currentUser) await sincronizzaDaCloud();
 });
 
 // ═══════════════════════════════════════════════════════
@@ -1214,7 +1125,6 @@ document.getElementById('btn-salva').addEventListener('click', async () => {
     await localforage.setItem(CUSTOM_KEY, mazzoFinale);
     await aggiornaListaCustom();
     await backupCloud(mazzoFinale, vecchioShash ? [vecchioShash] : []);
-    await new Promise(r => setTimeout(r, 300));
 
     // Se la carta era condivisa in community, aggiorna automaticamente anche lì
     if (communityId) await condividiInCommunity(carta);
@@ -1314,39 +1224,14 @@ async function eliminaCarta(idx) {
   const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
   const carta = mazzo[idx];
   if (!carta) return;
-
   if (!await customConfirm({
     message: 'Eliminare la carta "' + (carta.testo || carta.nome) + '"?',
     okText: 'SI', cancelText: 'NO'
   })) return;
-
-  // Rimuove dal mazzo
   mazzo.splice(idx, 1);
   await localforage.setItem(CUSTOM_KEY, mazzo);
   await aggiornaListaCustom();
-
-  // Aggiorna tombstones locali
-  if (carta.shash) {
-    const tombstones = await getTombstones();
-    tombstones[carta.shash] = Date.now();
-    await setTombstones(tombstones);
-  }
-
-  // Aggiorna il cloud anche se offline tramite "backupCloud deferred"
-  const task = async () => {
-    await backupCloud(mazzo, carta.shash ? [carta.shash] : []);
-    await sincronizzaDaCloud(true);
-  };
-
-  if (navigator.onLine) {
-    await task();
-  } else {
-    // se offline, esegui al ritorno online
-    window.addEventListener('online', async function onOnline() {
-      window.removeEventListener('online', onOnline);
-      await task();
-    });
-  }
+  if (carta.shash) await backupCloud(mazzo, [carta.shash]);
 }
 
 document.getElementById('btn-cancella-tutto').addEventListener('click', async () => {
@@ -1356,7 +1241,6 @@ document.getElementById('btn-cancella-tutto').addEventListener('click', async ()
   await localforage.removeItem(CUSTOM_KEY);
   await aggiornaListaCustom();
   await backupCloud([], shashes);
-  await sincronizzaDaCloud(true);
 });
 
 document.getElementById('cerca-mazzo').addEventListener('input', () => {
@@ -1453,8 +1337,6 @@ document.getElementById('inp-backup').addEventListener('change', async event => 
         await localforage.setItem(CUSTOM_KEY, [...esistente, ...nuove]);
         await customAlert('Importate ' + nuove.length + ' carte nuove, ' + (dati.length - nuove.length) + ' duplicate ignorate.');
         await aggiornaListaCustom();
-        await backupCloud(await localforage.getItem(CUSTOM_KEY));
-        await sincronizzaDaCloud(true);
         return;
       }
     } else {
