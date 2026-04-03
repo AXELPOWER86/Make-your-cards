@@ -352,6 +352,13 @@ input[type="file"] { display: none; }
         <div id="card-body"><span id="card-body-inner"></span></div>
       </div>
     </div>
+    <div id="preview-share-wrap" style="margin-top:10px;display:none;">
+      <button id="btn-condividi-preview" class="btn-dl"
+        style="background:linear-gradient(145deg,#2ecc71,#1a8a47);width:100%;max-width:360px;"
+        onclick="condividiCartaInModifica()">
+        🌐 Condividi in community
+      </button>
+    </div>
   </div>
 
   <!-- CONTROLLI -->
@@ -458,6 +465,8 @@ input[type="file"] { display: none; }
       const NOTIF  = document.getElementById("notifica");
       function cleanup() {
         overlay.style.display = "none";
+        overlay.style.transform = "";
+        overlay.style.transformOrigin = "";
         if (extra) { extra.innerHTML = ""; extra.style.display = "none"; }
         document.removeEventListener("keydown", onKey);
       }
@@ -472,16 +481,32 @@ input[type="file"] { display: none; }
           if (type === "alert" || type === "confirm") return close(true);
         }
       }
+      // Adatta il modal al viewport scalato (zoom attivo su mobile/desktop)
+      function mostraOverlay(focusFn) {
+        overlay.style.display = "flex";
+        requestAnimationFrame(() => {
+          const vv = window.visualViewport;
+          if (vv && Math.abs(vv.scale - 1) > 0.01) {
+            const s = 1 / vv.scale;
+            overlay.style.transform = `scale(${s})`;
+            overlay.style.transformOrigin = `${vv.offsetLeft + vv.width / 2}px ${vv.offsetTop + vv.height / 2}px`;
+          } else {
+            overlay.style.transform = "";
+            overlay.style.transformOrigin = "";
+          }
+          if (focusFn) focusFn();
+        });
+      }
       document.addEventListener("keydown", onKey);
       if (type === "alert") {
         NOTIF.style.display = "inline-block"; NOTIF.textContent = alertText;
-        overlay.style.display = "flex"; NOTIF.focus();
+        mostraOverlay(() => NOTIF.focus());
         NOTIF.addEventListener("click", () => close(true)); return;
       }
       if (type === "confirm") {
         OK.style.display = "inline-block"; CANCEL.style.display = "inline-block";
         OK.textContent = okText; CANCEL.textContent = cancelText;
-        overlay.style.display = "flex"; OK.focus();
+        mostraOverlay(() => OK.focus());
         OK.addEventListener("click", () => close(true));
         CANCEL.addEventListener("click", () => close(false)); return;
       }
@@ -496,7 +521,7 @@ input[type="file"] { display: none; }
           btn.addEventListener("click", () => close(b.value));
           extra.appendChild(btn);
         }
-        overlay.style.display = "flex"; return;
+        mostraOverlay(null); return;
       }
       close(cancelValue);
     });
@@ -511,7 +536,7 @@ input[type="file"] { display: none; }
   import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
   import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
     from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
-  import { getFirestore, doc, setDoc, getDoc, collection, getDocs, addDoc, updateDoc, increment, query, orderBy, limit }
+  import { getFirestore, doc, setDoc, getDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, increment, query, orderBy, limit }
     from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -658,6 +683,7 @@ window.backupCloud = async (mazzo) => {
     if (!cards.length) return;
     const isAdmin = _currentUser && _currentUser.uid === ADMIN_UID;
     cards.forEach(carta => {
+      const isOwner = _currentUser && carta.uid === _currentUser.uid;
       const wrap = document.createElement('div');
       wrap.className = 'community-card';
       const img = document.createElement('img');
@@ -684,12 +710,12 @@ window.backupCloud = async (mazzo) => {
       btnLike.onclick = () => likeCarta(carta.id);
       btns.appendChild(btnImport);
       btns.appendChild(btnLike);
-      if (isAdmin) {
+      if (isOwner || isAdmin) {
         const btnDel = document.createElement('button');
         btnDel.className = 'c-like';
         btnDel.style.background = '#d64040';
         btnDel.textContent = '🗑';
-        btnDel.title = 'Elimina carta (admin)';
+        btnDel.title = isAdmin && !isOwner ? 'Elimina carta (admin)' : 'Elimina la tua carta';
         btnDel.onclick = () => eliminaCartaCommunity(carta.id);
         btns.appendChild(btnDel);
       }
@@ -741,8 +767,16 @@ window.backupCloud = async (mazzo) => {
   async function eliminaCartaCommunity(id) {
     if (!await customConfirm({ message: 'Eliminare questa carta dalla community?', okText: 'SI', cancelText: 'NO' })) return;
     try {
-      const { deleteDoc, doc: fbDoc } = await import("https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js");
-      await deleteDoc(fbDoc(db, 'community', id));
+      await deleteDoc(doc(db, 'community', id));
+      // Rimuovi anche il communityId dalle carte locali che puntavano a questo doc
+      const mazzo = await localforage.getItem('mazzo_custom') || [];
+      let aggiornato = false;
+      mazzo.forEach(c => { if (c.communityId === id) { c.communityId = null; aggiornato = true; } });
+      if (aggiornato) {
+        await localforage.setItem('mazzo_custom', mazzo);
+        if (window.backupCloud) await window.backupCloud(mazzo);
+        if (window.aggiornaListaCustom) await window.aggiornaListaCustom();
+      }
       _communityCards = _communityCards.filter(c => c.id !== id);
       renderCommunity(_communityCards);
     } catch(e) { await customAlert('Errore eliminazione:\n' + e.message); }
@@ -751,11 +785,30 @@ window.backupCloud = async (mazzo) => {
   window.condividiInCommunity = async (carta) => {
     if (!_currentUser) { await customAlert('Devi accedere con Google per condividere.'); return; }
     try {
+      const imgCloud = await comprimiImgPerCloud(carta.img);
+
+      // ── UPDATE: carta già condivisa in precedenza ──
+      if (carta.communityId) {
+        await updateDoc(doc(db, 'community', carta.communityId), {
+          testo: carta.testo || '',
+          img: imgCloud,
+          nome: carta.nome || '',
+          updatedAt: new Date().toISOString()
+        });
+        const idx = _communityCards.findIndex(c => c.id === carta.communityId);
+        if (idx !== -1) {
+          _communityCards[idx].testo = carta.testo;
+          _communityCards[idx].img = imgCloud;
+        }
+        await customAlert('Carta aggiornata nella community! ✏️');
+        return;
+      }
+
+      // ── CREATE: prima condivisione ──
       if (_communityCards.some(c => c.shash === carta.shash)) {
         await customAlert('Questa carta è già presente nella community.'); return;
       }
-      const imgCloud = await comprimiImgPerCloud(carta.img);
-      await addDoc(collection(db, 'community'), {
+      const ref = await addDoc(collection(db, 'community'), {
         testo: carta.testo || '',
         img: imgCloud,
         shash: carta.shash || '',
@@ -765,6 +818,17 @@ window.backupCloud = async (mazzo) => {
         likes: 0,
         data: new Date().toISOString()
       });
+
+      // Salva communityId nel mazzo locale per i futuri update
+      const mazzo = await localforage.getItem('mazzo_custom') || [];
+      const cartaLocale = mazzo.find(c => c.shash === carta.shash);
+      if (cartaLocale) {
+        cartaLocale.communityId = ref.id;
+        carta.communityId = ref.id;
+        await localforage.setItem('mazzo_custom', mazzo);
+        if (window.backupCloud) await window.backupCloud(mazzo);
+      }
+
       await customAlert('Carta condivisa con la community! 🎉');
     } catch(e) { await customAlert('Errore condivisione:\n' + e.message); }
   };
@@ -968,7 +1032,9 @@ window.backupCloud = async (mazzo) => {
       }
       const cartaInModifica = esistente.find(c => c._inModifica);
       const nome = cartaInModifica ? cartaInModifica.nome : 'carta_custom_' + shash.slice(0, 8) + '.png';
-      const carta = { hash: null, phash: null, shash, lphash256: null, img: injectedDataUrl, nome, originale: nome, estratta: false, testo };
+      // Preserva il communityId se si sta modificando una carta già condivisa
+      const communityId = cartaInModifica ? (cartaInModifica.communityId || null) : null;
+      const carta = { hash: null, phash: null, shash, lphash256: null, img: injectedDataUrl, nome, originale: nome, estratta: false, testo, communityId };
       const mazzoFinale = esistente.filter(c => !c._inModifica);
       mazzoFinale.push(carta);
       await localforage.setItem(CUSTOM_KEY, mazzoFinale);
@@ -1079,6 +1145,7 @@ window.backupCloud = async (mazzo) => {
       await localforage.setItem(CUSTOM_KEY, mazzo);
       await aggiornaListaCustom();
       resetAll();
+      document.getElementById('preview-share-wrap').style.display = 'none';
       return;
     }
     const inModificaIdx = mazzo.findIndex(c => c._inModifica);
@@ -1088,7 +1155,19 @@ window.backupCloud = async (mazzo) => {
     document.getElementById('inp-body').value = carta.testo || '';
     updateCard();
     await aggiornaListaCustom();
+    document.getElementById('preview-share-wrap').style.display = 'block';
   }
+
+  // Condividi la carta attualmente in modifica tramite il pulsante sotto l'anteprima
+  window.condividiCartaInModifica = async function() {
+    const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
+    const carta = mazzo.find(c => c._inModifica);
+    if (!carta) {
+      await customAlert('Seleziona prima una carta dal mazzo (click su ✏️).');
+      return;
+    }
+    if (window.condividiInCommunity) await window.condividiInCommunity(carta);
+  };
 
   async function eliminaCarta(idx) {
     const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
@@ -1102,6 +1181,7 @@ window.backupCloud = async (mazzo) => {
     mazzo.splice(idx, 1);
     await localforage.setItem(CUSTOM_KEY, mazzo);
     await aggiornaListaCustom();
+    if (window.backupCloud) await window.backupCloud(mazzo);
   }
 
   async function cancellaTuttoMazzo() {
@@ -1142,16 +1222,13 @@ window.backupCloud = async (mazzo) => {
       btns.className = 'card-item-btns';
       const btnMod = document.createElement('button');
       btnMod.textContent = '✏️'; btnMod.className = 'btn-mod';
+      btnMod.title = 'Modifica carta';
       btnMod.onclick = () => modificaCarta(idx);
-      const btnShare = document.createElement('button');
-      btnShare.textContent = '🌐'; btnShare.className = 'btn-share';
-      btnShare.title = 'Condividi in community';
-      btnShare.onclick = () => { if (window.condividiInCommunity) window.condividiInCommunity(carta); };
       const btnDel = document.createElement('button');
       btnDel.textContent = '🗑'; btnDel.className = 'btn-del';
+      btnDel.title = 'Elimina carta';
       btnDel.onclick = () => eliminaCarta(idx);
       btns.appendChild(btnMod);
-      btns.appendChild(btnShare);
       btns.appendChild(btnDel);
       wrap.appendChild(img);
       wrap.appendChild(btns);
