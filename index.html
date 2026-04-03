@@ -1332,10 +1332,20 @@ async function eliminaCarta(idx) {
     await setTombstones(tombstones);
   }
 
-  // Se sei online, fai il backup e sincronizza
-  if (navigator.onLine) {
+  // Aggiorna il cloud anche se offline tramite "backupCloud deferred"
+  const task = async () => {
     await backupCloud(mazzo, carta.shash ? [carta.shash] : []);
     await sincronizzaDaCloud(true);
+  };
+
+  if (navigator.onLine) {
+    await task();
+  } else {
+    // se offline, esegui al ritorno online
+    window.addEventListener('online', async function onOnline() {
+      window.removeEventListener('online', onOnline);
+      await task();
+    });
   }
 }
 
