@@ -1352,7 +1352,7 @@ function avviaListenerBackupCloud() {
   });
 }
 
-// ── Funzione eliminaCarta aggiornata ──
+// ── Funzione eliminaCarta aggiornata e sincronizzata ──
 async function eliminaCarta(idx) {
   const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
   const carta = mazzo[idx];
@@ -1363,43 +1363,38 @@ async function eliminaCarta(idx) {
     okText: 'SI', cancelText: 'NO'
   })) return;
 
-  // Rimuove la carta dal mazzo locale
+  // Rimuove dal mazzo locale
   mazzo.splice(idx, 1);
+
+  // Aggiorna tombstones locali
+  const tombstones = await getTombstones();
+  if (carta.shash) tombstones[carta.shash] = Date.now();
+  await setTombstones(tombstones);
+
+  // Aggiorna lista
   await localforage.setItem(CUSTOM_KEY, mazzo);
   await aggiornaListaCustom();
 
-  // Aggiorna i tombstones locali
-  const tombstones = await getTombstones();
-  if (carta.shash) {
-    tombstones[carta.shash] = Date.now();
-    await setTombstones(tombstones);
-  }
+  // Backup immediato sul cloud
+  await backupCloud(mazzo, carta.shash ? [carta.shash] : []);
 
-  // Funzione di backup + sincronizzazione cloud
-  const task = async () => {
-    // Invia tutto il mazzo e TUTTI i tombstones al cloud
-    await backupCloud(mazzo, Object.keys(tombstones));
-
-    // Sincronizza dal cloud forzando l'aggiornamento del mazzo locale filtrando le carte cancellate
-    const cloudData = await sincronizzaDaCloud(true);
-    const mazzoCloud = cloudData.mazzo || [];
-    const tombstonesCloud = cloudData.tombstones || {};
-
-    // Filtra le carte fantasma usando i tombstones cloud
-    const mazzoFiltrato = mazzoCloud.filter(c => !tombstonesCloud[c.shash]);
-    await localforage.setItem(CUSTOM_KEY, mazzoFiltrato);
-    await aggiornaListaCustom();
-  };
-
-  if (navigator.onLine) {
-    await task();
-  } else {
-    window.addEventListener('online', async function onOnline() {
-      window.removeEventListener('online', onOnline);
-      await task();
-    });
-  }
+  // Sincronizza subito da cloud → locale, così altri dispositivi ricevono la cancellazione
+  await sincronizzaDaCloud(true);
 }
+
+// ── Forza sincronizzazione quando torna online ──
+window.addEventListener('online', async () => {
+  if (!_currentUser) {
+    return;
+  }
+
+  // Push locale → cloud
+  const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
+  await backupCloud(mazzo);
+
+  // Pull cloud → locale
+  await sincronizzaDaCloud(true);
+});
 
 document.getElementById('btn-cancella-tutto').addEventListener('click', async () => {
   if (!await customConfirm({ message: 'Cancellare tutto il mazzo personalizzato?', okText: 'SI', cancelText: 'NO' })) return;
