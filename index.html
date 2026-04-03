@@ -1204,6 +1204,7 @@ document.getElementById('btn-salva').addEventListener('click', async () => {
     await localforage.setItem(CUSTOM_KEY, mazzoFinale);
     await aggiornaListaCustom();
     await backupCloud(mazzoFinale, vecchioShash ? [vecchioShash] : []);
+    await sincronizzaDaCloud(true);
 
     // Se la carta era condivisa in community, aggiorna automaticamente anche lì
     if (communityId) await condividiInCommunity(carta);
@@ -1312,6 +1313,7 @@ async function eliminaCarta(idx) {
   await aggiornaListaCustom();
   // Aggiorna sempre il cloud dopo eliminazione (shash opzionale per tombstone)
   await backupCloud(mazzo, carta.shash ? [carta.shash] : []);
+  await sincronizzaDaCloud(true);
 }
 
 document.getElementById('btn-cancella-tutto').addEventListener('click', async () => {
@@ -1321,6 +1323,7 @@ document.getElementById('btn-cancella-tutto').addEventListener('click', async ()
   await localforage.removeItem(CUSTOM_KEY);
   await aggiornaListaCustom();
   await backupCloud([], shashes);
+  await sincronizzaDaCloud(true);
 });
 
 document.getElementById('cerca-mazzo').addEventListener('input', () => {
@@ -1417,6 +1420,8 @@ document.getElementById('inp-backup').addEventListener('change', async event => 
         await localforage.setItem(CUSTOM_KEY, [...esistente, ...nuove]);
         await customAlert('Importate ' + nuove.length + ' carte nuove, ' + (dati.length - nuove.length) + ' duplicate ignorate.');
         await aggiornaListaCustom();
+        await backupCloud(await localforage.getItem(CUSTOM_KEY));
+        await sincronizzaDaCloud(true);
         return;
       }
     } else {
