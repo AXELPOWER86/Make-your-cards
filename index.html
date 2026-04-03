@@ -933,31 +933,17 @@ document.getElementById('community-search').addEventListener('input', () => {
 });
 
 async function importaDaCommunity(carta) {
-  let esistente = await localforage.getItem(CUSTOM_KEY) || [];
+  const esistente = await localforage.getItem(CUSTOM_KEY) || [];
   const testoNorm = (carta.testo || '').toUpperCase().trim();
   const duplicata = esistente.some(c =>
     c.shash === carta.shash ||
     (testoNorm && (c.testo || '').toUpperCase().trim() === testoNorm)
   );
-  if (duplicata) {
-    await customAlert('Questa carta è già nel tuo mazzo.');
-    return;
-  }
-
-  // Aggiunge carta e segna _inModifica = false
-  const nuovaCarta = { ...carta, estratta: false, _inModifica: false };
-  esistente.push(nuovaCarta);
-
-  // Aggiorna locale e lista
+  if (duplicata) { await customAlert('Questa carta è già nel tuo mazzo.'); return; }
+  esistente.push({ ...carta, estratta: false, _inModifica: false });
   await localforage.setItem(CUSTOM_KEY, esistente);
   await aggiornaListaCustom();
-
-  // Backup immediato
   await backupCloud(esistente);
-
-  // Sincronizza subito da cloud → locale
-  await sincronizzaDaCloud(true);
-
   await customAlert('Carta importata nel mazzo!');
 }
 
