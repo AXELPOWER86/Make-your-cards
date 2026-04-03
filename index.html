@@ -617,13 +617,17 @@ window.loginGoogle = async () => {
 window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
   if (!_currentUser) return;
   try {
-    // Unisci i tombstone in memoria con eventuali nuovi prima di scrivere
-    _deletedShashes = [...new Set([..._deletedShashes, ...extraDeletedShashes])];
+    // Leggi prima i tombstone dal cloud per non sovrascriverli mai
+    const docRef = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo');
+    const snapCloud = await getDoc(docRef);
+    const cloudTombstones = snapCloud.exists() ? (snapCloud.data().deleted_shashes || []) : [];
+    // Unisci: cloud + memoria + nuovi (così i tombstone non vengono mai persi)
+    _deletedShashes = [...new Set([...cloudTombstones, ..._deletedShashes, ...extraDeletedShashes])];
     const mazzoCloud = await Promise.all(mazzo.map(async carta => ({
       ...carta,
       img: await comprimiImgPerCloud(carta.img)
     })));
-    await setDoc(doc(db, 'users', _currentUser.uid, 'backup', 'mazzo'), {
+    await setDoc(docRef, {
       carte: mazzoCloud,
       deleted_shashes: _deletedShashes,
       aggiornato: new Date().toISOString()
