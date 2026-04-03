@@ -933,18 +933,135 @@ document.getElementById('community-search').addEventListener('input', () => {
 });
 
 async function importaDaCommunity(carta) {
-  const esistente = await localforage.getItem(CUSTOM_KEY) || [];
+  let esistente = await localforage.getItem(CUSTOM_KEY) || [];
   const testoNorm = (carta.testo || '').toUpperCase().trim();
   const duplicata = esistente.some(c =>
     c.shash === carta.shash ||
     (testoNorm && (c.testo || '').toUpperCase().trim() === testoNorm)
   );
-  if (duplicata) { await customAlert('Questa carta è già nel tuo mazzo.'); return; }
-  esistente.push({ ...carta, estratta: false, _inModifica: false });
+  if (duplicata) {
+    await customAlert('Questa carta è già nel tuo mazzo.');
+    return;
+  }
+
+  // Aggiunge carta e segna _inModifica = false
+  const nuovaCarta = { ...carta, estratta: false, _inModifica: false };
+  esistente.push(nuovaCarta);
+
+  // Aggiorna locale e lista
   await localforage.setItem(CUSTOM_KEY, esistente);
   await aggiornaListaCustom();
+
+  // Backup immediato
   await backupCloud(esistente);
+
+  // Sincronizza subito da cloud → locale
+  await sincronizzaDaCloud(true);
+
   await customAlert('Carta importata nel mazzo!');
+}
+
+// ── Merge cloud corretto (sincronizzaDaCloud) ──
+async function sincronizzaDaCloud(silenzioso = false) {
+  if (!_currentUser) return;
+  try {
+    const ref  = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo');
+    const snap = await getDoc(ref);
+    let locale = await localforage.getItem(CUSTOM_KEY) || [];
+    let localeModificato = false;
+
+    const now = Date.now();
+    // Assicura savedAt per tutte le carte
+    locale = locale.map(c => {
+      if (!c.savedAt) { localeModificato = true; return { ...c, savedAt: now }; }
+      return c;
+    });
+    if (localeModificato) await localforage.setItem(CUSTOM_KEY, locale);
+
+    if (!snap.exists()) {
+      if (locale.length > 0) await backupCloud(locale);
+      return;
+    }
+
+    const data       = snap.data();
+    const cloudCarte = data.carte || [];
+
+    // Tombstones
+    const cloudTombstones = data.tombstones || {};
+    const localTombstones = await getTombstones();
+    let tombstones = { ...cloudTombstones };
+    for (const [s, ts] of Object.entries(localTombstones)) {
+      if (!tombstones[s] || ts > tombstones[s]) tombstones[s] = ts;
+    }
+    tombstones = purgaTombstones(tombstones);
+    await setTombstones(tombstones);
+
+    const isTombstoned = (c) => c.shash && c.shash.trim() && tombstones[c.shash.trim()];
+
+    const mergeMap = new Map();
+    // Inserisce le carte locali e quelle _inModifica vengono sempre preservate
+    for (const c of locale) {
+      if (isTombstoned(c)) continue;
+      const k = cartaKey(c);
+      if (!k) continue;
+      mergeMap.set(k, c);
+    }
+
+    let carteNuoveDaCloud = 0;
+    let carteAggiornateDaCloud = 0;
+
+    for (const cc of cloudCarte) {
+      if (isTombstoned(cc)) continue;
+      const k = cartaKey(cc);
+      if (!k) continue;
+
+      if (!mergeMap.has(k)) {
+        mergeMap.set(k, { ...cc, savedAt: cc.savedAt || now });
+        carteNuoveDaCloud++;
+      } else {
+        const loc = mergeMap.get(k);
+        const locSaved = loc.savedAt || 0;
+        const cloudSaved = cc.savedAt || 0;
+
+        // Solo se la carta locale non è _inModifica
+        if (!loc._inModifica && cloudSaved > locSaved) {
+          mergeMap.set(k, { ...cc, img: loc.img, savedAt: cloudSaved });
+          carteAggiornateDaCloud++;
+        }
+      }
+    }
+
+    const mazzoFinale = [...mergeMap.values()];
+    const localeNeedsUpdate = carteNuoveDaCloud > 0 || carteAggiornateDaCloud > 0 || localeModificato;
+    if (localeNeedsUpdate) {
+      await localforage.setItem(CUSTOM_KEY, mazzoFinale);
+      await aggiornaListaCustom();
+    }
+
+    // Aggiorna cloud se necessario
+    const cloudKeys = new Set(cloudCarte.map(cartaKey).filter(Boolean));
+    const nuovePerCloud = mazzoFinale.filter(c => {
+      const k = cartaKey(c);
+      return k && !cloudKeys.has(k);
+    });
+    const cloudNeedsUpdate =
+      nuovePerCloud.length > 0 ||
+      localeModificato ||
+      Object.keys(cloudTombstones).length !== Object.keys(tombstones).length;
+    if (cloudNeedsUpdate) await backupCloud(mazzoFinale);
+
+    if (!silenzioso) {
+      const n = carteNuoveDaCloud + carteAggiornateDaCloud + nuovePerCloud.length;
+      if (n > 0) {
+        const parti = [];
+        if (carteNuoveDaCloud > 0)      parti.push(carteNuoveDaCloud + ' carte nuove dal cloud');
+        if (carteAggiornateDaCloud > 0) parti.push(carteAggiornateDaCloud + ' carte aggiornate dal cloud');
+        if (nuovePerCloud.length > 0)   parti.push(nuovePerCloud.length + ' carte locali caricate sul cloud');
+        await customAlert('☁️ Sincronizzazione:\n' + parti.join('\n'));
+      }
+    }
+
+  } catch(e) { console.error('sincronizzaDaCloud error:', e); }
 }
 
 async function likeCarta(id) {
