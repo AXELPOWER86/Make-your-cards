@@ -422,11 +422,14 @@ input[type="file"] { display: none; }
 // ═══════════════════════════════════════════════════════
 // IMPORT FIREBASE
 // ═══════════════════════════════════════════════════════
-import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
+import { initializeApp } 
+  from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
 import { getFirestore, doc, setDoc, getDoc, collection, getDocs,
          addDoc, updateDoc, deleteDoc, increment, query, orderBy, limit }
+  from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+import { onSnapshot } 
   from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -453,6 +456,7 @@ const ADMIN_UID         = '6PF8IUUL2IZLXj8v82yHM133vvg2';
 let _currentUser    = null;
 let _communityCards = [];
 let _cartellaHandle = null;
+let unsubscribeCloud = null;
 
 localforage.config({ name: 'PorkysGame', storeName: 'mazzo_carte' });
 
@@ -581,25 +585,82 @@ function comprimiImgPerCloud(dataUrl) {
 // BACKUP CLOUD
 // tombstoneExtra: array di shash da aggiungere ai tombstone prima di scrivere
 // ═══════════════════════════════════════════════════════
-async function backupCloud(mazzo, tombstoneExtra = []) {
+window.backupCloud = async (mazzoLocale, extraDeletedShashes = []) => {
   if (!_currentUser) return;
-  try {
-    let tombstones = await getTombstones();
-    const now = Date.now();
-    for (const s of tombstoneExtra) if (!tombstones[s]) tombstones[s] = now;
-    tombstones = purgaTombstones(tombstones);
-    await setTombstones(tombstones);
 
-    const mazzoCloud = await Promise.all(
-      mazzo.map(async c => ({ ...c, img: await comprimiImgPerCloud(c.img) }))
-    );
-    await setDoc(doc(db, 'users', _currentUser.uid, 'backup', 'mazzo'), {
-      carte: mazzoCloud,
-      tombstones,
-      aggiornato: now
+  try {
+    const ref = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo');
+
+    // --- 1. LEGGI CLOUD ATTUALE ---
+    const snap = await getDoc(ref);
+    const cloudData = snap.exists() ? snap.data() : {};
+
+    const cloudCarte = cloudData.carte || [];
+    const cloudDeletedRaw = cloudData.deleted_shashes || {};
+
+    const cloudDeleted = Array.isArray(cloudDeletedRaw)
+      ? Object.fromEntries(cloudDeletedRaw.map(s => [s, 0]))
+      : cloudDeletedRaw;
+
+    // --- 2. UNISCI TOMBSTONES ---
+    const tombstones = { ...cloudDeleted, ..._deletedShashes };
+
+    const now = Date.now();
+    for (const shash of extraDeletedShashes) {
+      if (!tombstones[shash] || tombstones[shash] < now) {
+        tombstones[shash] = now;
+      }
+    }
+
+    _deletedShashes = tombstones;
+
+    // --- 3. MERGE CARTE (LOCALE + CLOUD) ---
+    const mergedMap = new Map();
+
+    // prima cloud
+    cloudCarte.forEach(c => {
+      if (c.shash) mergedMap.set(c.shash, c);
     });
-  } catch(e) { console.error('backupCloud ERRORE:', e); }
-}
+
+    // poi locale (vince se più recente)
+    mazzoLocale.forEach(c => {
+      if (!c.shash) return;
+
+      const old = mergedMap.get(c.shash);
+
+      if (!old || (c.savedAt && (!old.savedAt || c.savedAt > old.savedAt))) {
+        mergedMap.set(c.shash, c);
+      }
+    });
+
+    // --- 4. APPLICA CANCELLAZIONI ---
+    for (const shash in tombstones) {
+      mergedMap.delete(shash);
+    }
+
+    const mergedCarte = Array.from(mergedMap.values());
+
+    // --- 5. COMPRIMI IMMAGINI ---
+    const carteFinali = await Promise.all(
+      mergedCarte.map(async c => ({
+        ...c,
+        img: await comprimiImgPerCloud(c.img)
+      }))
+    );
+
+    // --- 6. SCRIVI SU CLOUD ---
+    await setDoc(ref, {
+      carte: carteFinali,
+      deleted_shashes: tombstones,
+      aggiornato: new Date().toISOString()
+    });
+
+    console.log("backupCloud OK");
+
+  } catch (e) {
+    console.error("backupCloud ERRORE:", e);
+  }
+};
 
 // ═══════════════════════════════════════════════════════
 // SINCRONIZZAZIONE DA CLOUD
@@ -659,6 +720,23 @@ async function sincronizzaDaCloud() {
   } catch(e) { console.error('sincronizzaDaCloud error:', e); }
 }
 
+function ascoltaCloudRealtime() {
+  if (!_currentUser) return;
+
+  const ref = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo');
+
+  // evita listener duplicati
+  if (unsubscribeCloud) unsubscribeCloud();
+
+  unsubscribeCloud = onSnapshot(ref, async (snap) => {
+    if (!snap.exists()) return;
+
+    console.log("Cloud aggiornato → sincronizzo");
+
+    await sincronizzaDaCloud();
+  });
+}
+
 // ═══════════════════════════════════════════════════════
 // AUTH
 // ═══════════════════════════════════════════════════════
@@ -675,6 +753,7 @@ onAuthStateChanged(auth, async user => {
     btnLogout.style.display = 'inline-block';
     btnCom.style.display    = 'inline-block';
     await sincronizzaDaCloud();
+    ascoltaCloudRealtime();
     await aggiornaListaCustom();
     await tentaRipristinoAutomatico();
   } else {
