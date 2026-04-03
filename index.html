@@ -1295,24 +1295,41 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
     const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
     const carta = mazzo[idx];
     if (!carta) return;
+
     const ok = await customConfirm({
       message: 'Eliminare la carta "' + (carta.testo || carta.nome) + '"?',
       okText: 'SI', cancelText: 'NO'
     });
     if (!ok) return;
+
+    // Rimuovi carta dal mazzo locale
     mazzo.splice(idx, 1);
     await localforage.setItem(CUSTOM_KEY, mazzo);
-    // Salva sempre il tombstone nel pending, online o offline
+
     if (carta.shash) {
+      const ts = Date.now();
+
+      // Aggiorna tombstone locale
+      const deleted = await localforage.getItem('deleted_shashes') || {};
+      deleted[carta.shash] = ts;
+      await localforage.setItem('deleted_shashes', deleted);
+      window._deletedShashes = deleted;
+
+      // Aggiorna pending log
       const pending = await localforage.getItem('mazzo_pending_ops') || [];
       const filtrato = pending.filter(p => p.shash !== carta.shash && p.newShash !== carta.shash);
-      filtrato.push({ op: 'delete', shash: carta.shash, ts: Date.now() });
+      filtrato.push({ op: 'delete', shash: carta.shash, ts });
       await localforage.setItem('mazzo_pending_ops', filtrato);
+
+      // Backup cloud per sincronizzare la cancellazione sugli altri dispositivi
+      if (window._currentUser && navigator.onLine && window.backupCloud) {
+        // Invio mazzo aggiornato e cancellazione
+        await window.backupCloud(mazzo, { delete: [carta.shash] });
+      }
     }
+
+    // Aggiorna l'interfaccia
     await aggiornaListaCustom();
-    if (window._currentUser && navigator.onLine) {
-      if (window.backupCloud) await window.backupCloud(mazzo, carta.shash ? [carta.shash] : []);
-    }
   }
 
   async function cancellaTuttoMazzo() {
