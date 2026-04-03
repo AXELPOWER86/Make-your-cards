@@ -584,44 +584,25 @@ function comprimiImgPerCloud(dataUrl) {
 async function backupCloud(mazzo, tombstoneExtra = []) {
   if (!_currentUser) return;
   try {
+    // Leggi tombstone cloud e unisci con quelli locali — non perdere mai un tombstone
+    const ref = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo');
+    const snap = await getDoc(ref);
+    const cloudTombstones = snap.exists() ? (snap.data().tombstones || {}) : {};
     let tombstones = await getTombstones();
+    for (const [s, ts] of Object.entries(cloudTombstones)) {
+      if (!tombstones[s] || ts > tombstones[s]) tombstones[s] = ts;
+    }
     const now = Date.now();
     for (const s of tombstoneExtra) if (!tombstones[s]) tombstones[s] = now;
     tombstones = purgaTombstones(tombstones);
     await setTombstones(tombstones);
 
+    // Comprimi immagini e scrivi — il mazzo passato è la fonte di verità
     const mazzoCloud = await Promise.all(
       mazzo.map(async c => ({ ...c, img: await comprimiImgPerCloud(c.img) }))
     );
-    const ref = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo');
-
-    const snap = await getDoc(ref);
-    let carteFinali = mazzoCloud;
-
-    if (snap.exists()) {
-      const cloud = snap.data().carte || [];
-
-      const map = new Map();
-
-      // prima cloud
-      for (const c of cloud) {
-        if (c.shash) map.set(c.shash, c);
-      }
-
-      // poi locale (vince il più recente)
-      for (const c of mazzoCloud) {
-        if (!c.shash) continue;
-        const old = map.get(c.shash);
-        if (!old || (c.savedAt && (!old.savedAt || c.savedAt > old.savedAt))) {
-          map.set(c.shash, c);
-        }
-      }
-
-      carteFinali = Array.from(map.values());
-    }
-
     await setDoc(ref, {
-      carte: carteFinali,
+      carte: mazzoCloud,
       tombstones,
       aggiornato: now
     });
@@ -643,8 +624,8 @@ async function sincronizzaDaCloud() {
       return;
     }
 
-    const data        = snap.data();
-    const cloudCarte  = data.carte || [];
+    const data       = snap.data();
+    const cloudCarte = data.carte || [];
 
     // Merge tombstone: cloud + locali → vince il più recente, poi purga vecchi
     const cloudTombstones = data.tombstones || {};
@@ -656,17 +637,18 @@ async function sincronizzaDaCloud() {
     tombstones = purgaTombstones(tombstones);
     await setTombstones(tombstones);
 
-    // Filtra carte cloud: rimuove quelle nei tombstone
+    // BASE: carte cloud filtrate per tombstone — il cloud è fonte di verità
+    // Se una carta non è nel cloud è stata cancellata: non torna mai
     const carteFiltrate = cloudCarte.filter(c => !c.shash || !(c.shash in tombstones));
 
-    // Aggiunge carte locali mai sincronizzate e non nei tombstone
+    // SOLO LOCALI: carte create offline mai arrivate al cloud, non nei tombstone
     const locale = await localforage.getItem(CUSTOM_KEY) || [];
-    const cloudShashes = new Set(carteFiltrate.map(c => c.shash).filter(Boolean));
+    const cloudShashes = new Set(cloudCarte.map(c => c.shash).filter(Boolean));
     const soloLocali = locale.filter(c =>
       c.shash && !cloudShashes.has(c.shash) && !(c.shash in tombstones)
     );
 
-    // Merge + deduplicazione
+    // Merge finale con deduplicazione
     const visti = new Map();
     for (const c of [...carteFiltrate, ...soloLocali]) {
       const key = c.shash || c.nome;
@@ -674,30 +656,12 @@ async function sincronizzaDaCloud() {
     }
     const mazzoFinale = [...visti.values()];
 
+    // Scrivi locale e aggiorna UI
     await localforage.setItem(CUSTOM_KEY, mazzoFinale);
     await aggiornaListaCustom();
 
-    // Riscrivi cloud con stato pulito
-    // prima cloud
-    for (const c of mazzoFinale) {
-      if (c.shash) tutti.set(c.shash, c);
-    }
-
-    // poi locale (sovrascrive se più recente)
-    for (const c of locale) {
-      if (!c.shash) continue;
-      const old = tutti.get(c.shash);
-      if (!old || (c.savedAt && (!old.savedAt || c.savedAt > old.savedAt))) {
-        tutti.set(c.shash, c);
-      }
-    }
-
-    const finale = Array.from(tutti.values());
-
-    await localforage.setItem(CUSTOM_KEY, finale);
-    await aggiornaListaCustom();
-
-    await backupCloud(finale);
+    // Riscrivi cloud con stato pulito (include soloLocali + tombstone aggiornati)
+    await backupCloud(mazzoFinale);
 
     if (soloLocali.length > 0) {
       await customAlert('☁️ Sincronizzazione:\n' + soloLocali.length + ' carte locali caricate sul cloud.');
