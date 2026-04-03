@@ -555,6 +555,11 @@ input[type="file"] { display: none; }
   let _currentUser = null;
   let _communityCards = [];
   let _deletedShashes = []; // tombstone persistenti: shash cancellati, mai da reinserire
+  // Promise che si risolve quando la sincronizzazione iniziale è completata (o non necessaria)
+  let _syncReady;
+  let _syncReadyResolve;
+  _syncReady = new Promise(r => { _syncReadyResolve = r; });
+  window._syncReady = _syncReady;
 
   onAuthStateChanged(auth, async user => {
     _currentUser = user;
@@ -568,11 +573,13 @@ input[type="file"] { display: none; }
       btnLogout.style.display = 'inline-block';
       btnCom.style.display    = 'inline-block';
       await sincronizzaDaCloud();
+      _syncReadyResolve();
     } else {
       loginInfo.textContent   = 'Non connesso';
       btnLogin.style.display  = 'inline-block';
       btnLogout.style.display = 'none';
       btnCom.style.display    = 'none';
+      _syncReadyResolve(); // nessun sync necessario, sblocca subito
     }
   });
 
@@ -919,6 +926,9 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
       xhr.onerror = () => resolve();
       xhr.send();
     });
+    // Aspetta che la sincronizzazione cloud sia completata (o che si sappia che non serve)
+    // prima di renderizzare il mazzo e proporre il ripristino automatico
+    if (window._syncReady) await window._syncReady;
     await aggiornaListaCustom();
     await tentaRipristinoAutomatico();
   });
