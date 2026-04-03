@@ -740,10 +740,17 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
     }
     merged = [...visti.values()];
 
+    merged = merged.filter(c => {
+      if (!c.shash) return true;
+      const delTs = tuttiDeleted[c.shash];
+      if (delTs === undefined) return true;
+      return c.savedAt > delTs;
+    });
+
     // Scrivi locale, poi cloud con tombstone aggiornati, poi svuota pending
     await localforage.setItem('mazzo_custom', merged);
     await window.aggiornaListaCustom();
-    await window.backupCloud(merged, Object.keys(pendingDeleted)); // propaga tombstone offline sul cloud
+    await window.backupCloud(merged, Object.keys(tuttiDeleted)); // propaga tombstone offline sul cloud
     await localforage.removeItem('mazzo_pending_ops');
 
     const msgs = [];
@@ -1335,7 +1342,20 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
 
   async function cancellaTuttoMazzo() {
     if (!await customConfirm({ message: 'Cancellare tutto il mazzo personalizzato?', okText: 'SI', cancelText: 'NO' })) return;
+
+    const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
+    const pending = await localforage.getItem('mazzo_pending_ops') || [];
+    const now = Date.now();
+
+    mazzo.forEach(c => {
+      if (c.shash) {
+        pending.push({ op: 'delete', shash: c.shash, ts: now });
+      }
+    });
+
+    await localforage.setItem('mazzo_pending_ops', pending);
     await localforage.removeItem(CUSTOM_KEY);
+
     await aggiornaListaCustom();
   }
 
