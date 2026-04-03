@@ -1286,16 +1286,16 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
     if (!ok) return;
     mazzo.splice(idx, 1);
     await localforage.setItem(CUSTOM_KEY, mazzo);
-    await aggiornaListaCustom();
-    if (_currentUser && navigator.onLine) {
-      // Online: backup con tombstone → altri dispositivi non reinseriranno la carta
-      if (window.backupCloud) await window.backupCloud(mazzo, carta.shash ? [carta.shash] : []);
-    } else if (carta.shash) {
-      // Offline: registra nel log pending, sarà propagato al prossimo login
+    // Salva sempre il tombstone nel pending, online o offline
+    if (carta.shash) {
       const pending = await localforage.getItem('mazzo_pending_ops') || [];
       const filtrato = pending.filter(p => p.shash !== carta.shash && p.newShash !== carta.shash);
       filtrato.push({ op: 'delete', shash: carta.shash, ts: Date.now() });
       await localforage.setItem('mazzo_pending_ops', filtrato);
+    }
+    await aggiornaListaCustom();
+    if (_currentUser && navigator.onLine) {
+      if (window.backupCloud) await window.backupCloud(mazzo, carta.shash ? [carta.shash] : []);
     }
   }
 
