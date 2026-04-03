@@ -738,7 +738,6 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
       console.warn("Sync fallita:", e);
     }
   }
-
   // ── COMMUNITY ──
   window.apriCommunity = async () => {
     document.getElementById('communityOverlay').style.display = 'flex';
@@ -1296,33 +1295,23 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
     const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
     const carta = mazzo[idx];
     if (!carta) return;
-
     const ok = await customConfirm({
       message: 'Eliminare la carta "' + (carta.testo || carta.nome) + '"?',
       okText: 'SI', cancelText: 'NO'
     });
     if (!ok) return;
-
-    // --- rimuovi carta dal mazzo locale ---
     mazzo.splice(idx, 1);
     await localforage.setItem(CUSTOM_KEY, mazzo);
-
-    // --- aggiorna tombstone locale ---
+    // Salva sempre il tombstone nel pending, online o offline
     if (carta.shash) {
-      _deletedShashes[carta.shash] = Date.now();
-      await localforage.setItem('deleted_shashes', _deletedShashes);
-
-      // --- aggiungi operazione pending ---
       const pending = await localforage.getItem('mazzo_pending_ops') || [];
-      pending.push({ op: 'delete', shash: carta.shash, ts: _deletedShashes[carta.shash] });
-      await localforage.setItem('mazzo_pending_ops', pending);
+      const filtrato = pending.filter(p => p.shash !== carta.shash && p.newShash !== carta.shash);
+      filtrato.push({ op: 'delete', shash: carta.shash, ts: Date.now() });
+      await localforage.setItem('mazzo_pending_ops', filtrato);
     }
-
     await aggiornaListaCustom();
-
-    // --- backup cloud se online e loggato ---
-    if (window._currentUser && navigator.onLine && window.backupCloud) {
-      await window.backupCloud(mazzo, carta.shash ? [carta.shash] : []);
+    if (window._currentUser && navigator.onLine) {
+      if (window.backupCloud) await window.backupCloud(mazzo, carta.shash ? [carta.shash] : []);
     }
   }
 
