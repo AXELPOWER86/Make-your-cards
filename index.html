@@ -333,17 +333,15 @@ input[type="file"] { display: none; }
 <h1>Porky's Game® - Editor Carte</h1>
 <p class="description">Crea le tue carte personalizzate per il mazzo</p>
 
-<!-- LOGIN BAR -->
 <div id="login-bar">
   <span id="login-info">Non connesso</span>
   <div class="spacer"></div>
-  <button class="btn" id="btn-community" onclick="apriCommunity()" style="display:none;">🌐 Community</button>
-  <button class="btn" id="btn-login" onclick="loginGoogle()">🔑 Accedi con Google</button>
-  <button class="reset" id="btn-logout" onclick="logoutGoogle()" style="display:none;">Esci</button>
+  <button class="btn" id="btn-community" style="display:none;">🌐 Community</button>
+  <button class="btn" id="btn-login">🔑 Accedi con Google</button>
+  <button class="reset" id="btn-logout" style="display:none;">Esci</button>
 </div>
 
 <div class="layout">
-  <!-- CARTA ANTEPRIMA -->
   <div>
     <div class="preview-label">Anteprima</div>
     <div id="card-container">
@@ -354,1048 +352,90 @@ input[type="file"] { display: none; }
     </div>
     <div id="preview-share-wrap" style="margin-top:10px;display:none;">
       <button id="btn-condividi-preview" class="btn-dl"
-        style="background:linear-gradient(145deg,#2ecc71,#1a8a47);width:100%;max-width:360px;"
-        onclick="condividiCartaInModifica()">
+        style="background:linear-gradient(145deg,#2ecc71,#1a8a47);width:100%;max-width:360px;">
         🌐 Condividi in community
       </button>
     </div>
   </div>
 
-  <!-- CONTROLLI -->
   <div class="controls">
     <h2>✏️ Testo della carta</h2>
     <div>
       <label for="inp-body">Scrivi il testo:</label>
-      <textarea id="inp-body" style="text-align: center;" placeholder="&#10;&#10;&#10;SCRIVI IL TESTO DELLA CARTA&#10;QUI" oninput="updateCard()"></textarea>
+      <textarea id="inp-body" style="text-align:center;"
+        placeholder="&#10;&#10;&#10;SCRIVI IL TESTO DELLA CARTA&#10;QUI"></textarea>
       <div class="hint"><br>Il testo si adatta automaticamente alle dimensioni della carta</div>
     </div>
-    <button class="btn-dl" id="btn-dl" onclick="downloadCard()">
+    <button class="btn-dl" id="btn-dl">
       <span class="lbl">⬇ Scarica PNG</span>
       <div class="spinner"></div>
     </button>
-    <button class="btn-dl" id="btn-salva" onclick="salvaInMazzo()" style="background:linear-gradient(145deg,#2ecc71,#1a8a47);">
+    <button class="btn-dl" id="btn-salva" style="background:linear-gradient(145deg,#2ecc71,#1a8a47);">
       <span class="lbl">💾 Salva nel mazzo</span>
       <div class="spinner"></div>
     </button>
-    <button class="btn-reset" onclick="resetAll()">🗑 Cancella testo</button>
-    <div style="border-top: 2px solid #502369; padding-top: 12px;">
+    <button class="btn-reset" id="btn-reset-testo">🗑 Cancella testo</button>
+    <div style="border-top:2px solid #502369;padding-top:12px;">
       <label>🃏 Sfondo carta:</label>
-      <button class="btn-dl" style="background:linear-gradient(145deg,#dfad24,#9b710e);color:#3b2500;" onclick="document.getElementById('inp-carta').click()">📂 Carica sfondo carta</button>
-      <input type="file" id="inp-carta" accept="image/png,image/jpeg,image/webp" onchange="loadCardBg(event)">
+      <button class="btn-dl" id="btn-carica-sfondo"
+        style="background:linear-gradient(145deg,#dfad24,#9b710e);color:#3b2500;">
+        📂 Carica sfondo carta
+      </button>
+      <input type="file" id="inp-carta" accept="image/png,image/jpeg,image/webp">
       <div class="file-status" id="status-carta">nessun file caricato</div>
     </div>
   </div>
 </div>
 
-<!-- GESTIONE MAZZO PERSONALIZZATO -->
 <div class="mazzo-section">
   <div class="mazzo-header">
     <span>🃏 Mazzo personalizzato</span>
     <span class="mazzo-count"><span id="contatore-custom">0</span> carte</span>
     <input type="text" id="cerca-mazzo" placeholder="🔍 Cerca nel mazzo..."
-      oninput="filtraMazzo()"
       style="padding:4px 10px;border:2px solid #502369;border-radius:6px;
       font-family:'Carlito',Arial,sans-serif;font-weight:bold;font-size:13px;
       color:#502369;background:#fff;outline:none;width:150px;">
-    <button class="btn-cancella-tutto" onclick="cancellaTuttoMazzo()">🗑 Cancella tutto</button>
-    <button class="btn-cancella-tutto" style="background:linear-gradient(145deg,#2ecc71,#1a8a47); margin-left:0;" onclick="esportaBackup()">💾 Backup Mazzo</button>
-    <button class="btn-cancella-tutto" style="background:linear-gradient(145deg,#3498db,#1a5a8a); margin-left:0;" onclick="document.getElementById('inp-backup').click()">📂 Importa backup</button>
-    <input type="file" id="inp-backup" accept=".json" onchange="importaBackup(event)">
+    <button class="btn-cancella-tutto" id="btn-cancella-tutto">🗑 Cancella tutto</button>
+    <button class="btn-cancella-tutto" id="btn-esporta-backup"
+      style="background:linear-gradient(145deg,#2ecc71,#1a8a47);margin-left:0;">
+      💾 Backup Mazzo
+    </button>
+    <button class="btn-cancella-tutto" id="btn-importa-backup"
+      style="background:linear-gradient(145deg,#3498db,#1a5a8a);margin-left:0;">
+      📂 Importa backup
+    </button>
+    <input type="file" id="inp-backup" accept=".json">
   </div>
   <div id="lista-custom"></div>
 </div>
 
-<!-- MODALE COMMUNITY -->
 <div id="communityOverlay">
   <div id="communityBox">
     <h2>🌐 Community Porky's Game</h2>
-    <input type="text" id="community-search" placeholder="Cerca per testo..." oninput="filtraCommunity()" autocomplete="off">
+    <input type="text" id="community-search" placeholder="Cerca per testo..." autocomplete="off">
     <div id="community-status">Caricamento carte...</div>
     <div id="community-grid"></div>
-    <div style="display:flex; gap:8px; justify-content:center; flex-wrap:wrap;">
-      <button class="btn" onclick="chiudiCommunity()">✕ Chiudi</button>
+    <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
+      <button class="btn" id="btn-chiudi-community">✕ Chiudi</button>
     </div>
   </div>
 </div>
 
-<!-- MODALE GENERICA (alert/confirm) -->
-<div id="modalOverlay" style="
-  position:fixed;inset:0;background:rgba(0,0,0,.6);
-  display:none;align-items:center;justify-content:center;z-index:30000;
-">
-  <div style="
-    background:#f9e0a7;border:4px solid #502369;border-radius:14px;
-    padding:25px;min-width:280px;max-width:80vw;
-    text-align:center;font-size:18px;color:#502369;
-    display:flex;flex-direction:column;align-items:center;gap:12px;
-  ">
+<div id="modalOverlay">
+  <div id="modalBox">
     <div id="modalText" style="white-space:pre-line;"></div>
     <div id="modalExtra" style="display:none;gap:10px;width:100%;"></div>
     <div id="modalBtns" style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
       <button id="modalOk" class="reset">SI</button>
       <button id="modalCancel" class="btn">NO</button>
-      <button id="notifica" class="btn">OK</button>
+      <button id="modalNotif" class="btn">OK</button>
     </div>
   </div>
 </div>
 
-<script>
-(function () {
-  function modalDialog(cfgOrMessage, type = "alert") {
-    const cfg = (typeof cfgOrMessage === "string") ? { message: cfgOrMessage } : (cfgOrMessage || {});
-    const { message = "", okText = "SI", cancelText = "NO", alertText = "OK", buttons = [], cancelValue = null } = cfg;
-    return new Promise(resolve => {
-      const overlay = document.getElementById("modalOverlay");
-      const text    = document.getElementById("modalText");
-      const extra   = document.getElementById("modalExtra");
-      if (!overlay || !text) { resolve(type === "confirm" ? false : cancelValue); return; }
-      const okBtn = document.getElementById("modalOk");
-      const cancelBtn = document.getElementById("modalCancel");
-      const kBtn = document.getElementById("notifica");
-      if (extra)     { extra.innerHTML = ""; extra.style.display = "none"; }
-      if (okBtn)     okBtn.style.display = "none";
-      if (cancelBtn) cancelBtn.style.display = "none";
-      if (kBtn)      kBtn.style.display = "none";
-      text.textContent = message;
-      if (okBtn)     okBtn.parentNode.replaceChild(okBtn.cloneNode(true), okBtn);
-      if (cancelBtn) cancelBtn.parentNode.replaceChild(cancelBtn.cloneNode(true), cancelBtn);
-      if (kBtn)      kBtn.parentNode.replaceChild(kBtn.cloneNode(true), kBtn);
-      const OK     = document.getElementById("modalOk");
-      const CANCEL = document.getElementById("modalCancel");
-      const NOTIF  = document.getElementById("notifica");
-      function cleanup() {
-        overlay.style.display = "none";
-        overlay.style.transform = "";
-        overlay.style.transformOrigin = "";
-        if (extra) { extra.innerHTML = ""; extra.style.display = "none"; }
-        document.removeEventListener("keydown", onKey);
-      }
-      function close(value) { cleanup(); resolve(value); }
-      function onKey(e) {
-        if (e.key === "Escape") {
-          if (type === "alert")   return close(true);
-          if (type === "confirm") return close(false);
-          if (type === "choice")  return close(cancelValue);
-        }
-        if (e.key === "Enter") {
-          if (type === "alert" || type === "confirm") return close(true);
-        }
-      }
-      // Adatta il modal al viewport scalato (zoom attivo su mobile/desktop)
-      function mostraOverlay(focusFn) {
-        overlay.style.display = "flex";
-        requestAnimationFrame(() => {
-          const vv = window.visualViewport;
-          if (vv && Math.abs(vv.scale - 1) > 0.01) {
-            const s = 1 / vv.scale;
-            overlay.style.transform = `scale(${s})`;
-            overlay.style.transformOrigin = `${vv.offsetLeft + vv.width / 2}px ${vv.offsetTop + vv.height / 2}px`;
-          } else {
-            overlay.style.transform = "";
-            overlay.style.transformOrigin = "";
-          }
-          if (focusFn) focusFn();
-        });
-      }
-      document.addEventListener("keydown", onKey);
-      if (type === "alert") {
-        NOTIF.style.display = "inline-block"; NOTIF.textContent = alertText;
-        mostraOverlay(() => NOTIF.focus());
-        NOTIF.addEventListener("click", () => close(true)); return;
-      }
-      if (type === "confirm") {
-        OK.style.display = "inline-block"; CANCEL.style.display = "inline-block";
-        OK.textContent = okText; CANCEL.textContent = cancelText;
-        mostraOverlay(() => OK.focus());
-        OK.addEventListener("click", () => close(true));
-        CANCEL.addEventListener("click", () => close(false)); return;
-      }
-      if (type === "choice") {
-        extra.innerHTML = ""; extra.style.display = "grid"; extra.style.gap = "10px";
-        extra.style.gridTemplateColumns = "repeat(2, minmax(120px, 1fr))";
-        for (const b of buttons) {
-          const btn = document.createElement("button");
-          btn.textContent = b.text || "OK";
-          btn.className = b.className === "reset" ? "btn-reset" : "btn-dl";
-          btn.style.cssText = "width:100%;padding:8px;font-size:14px;";
-          btn.addEventListener("click", () => close(b.value));
-          extra.appendChild(btn);
-        }
-        mostraOverlay(null); return;
-      }
-      close(cancelValue);
-    });
-  }
-  window.customAlert   = msg => modalDialog(msg, "alert");
-  window.customConfirm = cfg => modalDialog(cfg, "confirm");
-})();
-</script>
-
-<!-- FIREBASE -->
-<script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
-  import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
-    from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
-  import { getFirestore, doc, setDoc, getDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, increment, query, orderBy, limit }
-    from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
-
-  const firebaseConfig = {
-    apiKey: "AIzaSyAuZHO-xS2IJKETIUpn8UF9vF898WZflJ4",
-    authDomain: "community-carte-porky-s-game.firebaseapp.com",
-    projectId: "community-carte-porky-s-game",
-    storageBucket: "community-carte-porky-s-game.firebasestorage.app",
-    messagingSenderId: "249739861540",
-    appId: "1:249739861540:web:c14d3b728e0b31c9b142b1"
-  };
-
-  const app  = initializeApp(firebaseConfig);
-  const auth = getAuth(app);
-  const db   = getFirestore(app);
-
-  let _currentUser = null;
-  let _communityCards = [];
-  let _syncReadyResolve;
-  const _syncReady = new Promise(r => { _syncReadyResolve = r; });
-  window._syncReady = _syncReady;
-  window._currentUser = null;
-
-  // ── TOMBSTONE HELPERS ──
-  // I tombstone sono { shash: deletedAtMs } e vivono sia in locale che sul cloud.
-  // Al sync, qualsiasi carta (locale o cloud) il cui shash è nei tombstone viene eliminata.
-  const TOMBSTONE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 giorni
-
-  function purgaVecchiTombstone(tombstones) {
-    const now = Date.now();
-    const puliti = {};
-    for (const [s, ts] of Object.entries(tombstones)) {
-      if (now - ts < TOMBSTONE_TTL_MS) puliti[s] = ts;
-    }
-    return puliti;
-  }
-
-  // Legge i tombstone locali da localforage
-  async function getTombstoneLocali() {
-    return await localforage.getItem('mazzo_tombstones') || {};
-  }
-
-  // Salva i tombstone locali
-  async function setTombstoneLocali(t) {
-    await localforage.setItem('mazzo_tombstones', t);
-  }
-
-  // Aggiunge uno o più shash ai tombstone locali
-  async function aggiungiTombstone(shashes) {
-    const t = await getTombstoneLocali();
-    const now = Date.now();
-    for (const s of shashes) t[s] = now;
-    await setTombstoneLocali(t);
-    return t;
-  }
-
-  // ── AUTH ──
-  onAuthStateChanged(auth, async user => {
-    _currentUser = user;
-    window._currentUser = user;
-    const loginInfo = document.getElementById('login-info');
-    const btnLogin  = document.getElementById('btn-login');
-    const btnLogout = document.getElementById('btn-logout');
-    const btnCom    = document.getElementById('btn-community');
-    if (user) {
-      loginInfo.innerHTML = (user.photoURL ? `<img src="${user.photoURL}" alt="">` : '') + ' ' + (user.displayName || user.email);
-      btnLogin.style.display  = 'none';
-      btnLogout.style.display = 'inline-block';
-      btnCom.style.display    = 'inline-block';
-      await sincronizzaDaCloud();
-      _syncReadyResolve();
-    } else {
-      loginInfo.textContent   = 'Non connesso';
-      btnLogin.style.display  = 'inline-block';
-      btnLogout.style.display = 'none';
-      btnCom.style.display    = 'none';
-      _syncReadyResolve();
-    }
-  });
-
-  window.loginGoogle = async () => {
-    try {
-      const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-    } catch(e) {
-      if (e.code !== 'auth/popup-closed-by-user') {
-        await customAlert('Errore login:\n' + e.message);
-      }
-    }
-  };
-
-  window.logoutGoogle = async () => {
-    if (!await customConfirm({ message: 'Disconnettersi da Google?', okText: 'SI', cancelText: 'NO' })) return;
-    await signOut(auth);
-  };
-
-  // ── COMPRESSIONE IMMAGINI ──
-  async function comprimiImgPerCloud(dataUrl) {
-    return new Promise(resolve => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const MAX = 400;
-        const ratio = Math.min(MAX / img.width, MAX / img.height, 1);
-        canvas.width  = Math.round(img.width  * ratio);
-        canvas.height = Math.round(img.height * ratio);
-        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL('image/jpeg', 0.7));
-      };
-      img.src = dataUrl;
-    });
-  }
-
-  // ── BACKUP CLOUD ──
-  // Scrive sul cloud: carte compresse + tombstone aggiornati.
-  // tombstoneExtra: array di shash appena cancellati da aggiungere prima di scrivere.
-  window.backupCloud = async (mazzo, tombstoneExtra = []) => {
-    if (!_currentUser) return;
-    try {
-      // Merge tombstone: locali + extra passati ora
-      let tombstones = await getTombstoneLocali();
-      const now = Date.now();
-      for (const s of tombstoneExtra) if (!tombstones[s]) tombstones[s] = now;
-      tombstones = purgaVecchiTombstone(tombstones);
-      await setTombstoneLocali(tombstones);
-
-      const mazzoCloud = await Promise.all(
-        mazzo.map(async c => ({ ...c, img: await comprimiImgPerCloud(c.img) }))
-      );
-      await setDoc(doc(db, 'users', _currentUser.uid, 'backup', 'mazzo'), {
-        carte: mazzoCloud,
-        tombstones,
-        aggiornato: now
-      });
-    } catch(e) { console.error('backupCloud ERRORE:', e); }
-  };
-
-  // ── SINCRONIZZAZIONE DA CLOUD ──
-  async function sincronizzaDaCloud() {
-    if (!_currentUser) return;
-    try {
-      const snap = await getDoc(doc(db, 'users', _currentUser.uid, 'backup', 'mazzo'));
-
-      // Primo login: nessun backup cloud, carica locale
-      if (!snap.exists()) {
-        const locale = await localforage.getItem('mazzo_custom') || [];
-        if (locale.length > 0) await window.backupCloud(locale);
-        return;
-      }
-
-      const data = snap.data();
-      const cloudCarte = data.carte || [];
-
-      // ── Merge tombstone: cloud + locali, poi purga vecchi ──
-      const cloudTombstones = data.tombstones || {};
-      const localTombstones = await getTombstoneLocali();
-      let tombstones = { ...cloudTombstones };
-      for (const [s, ts] of Object.entries(localTombstones)) {
-        // Vince il timestamp più recente
-        if (!tombstones[s] || ts > tombstones[s]) tombstones[s] = ts;
-      }
-      tombstones = purgaVecchiTombstone(tombstones);
-      await setTombstoneLocali(tombstones);
-
-      // ── Filtra: rimuove dal cloud le carte cancellate (tombstone) ──
-      const carteFiltrate = cloudCarte.filter(c => !c.shash || !(c.shash in tombstones));
-
-      // ── Aggiunge carte locali mai sincronizzate (non nei tombstone) ──
-      const locale = await localforage.getItem('mazzo_custom') || [];
-      const cloudShashes = new Set(carteFiltrate.map(c => c.shash).filter(Boolean));
-      const soloLocali = locale.filter(c =>
-        c.shash &&
-        !cloudShashes.has(c.shash) &&
-        !(c.shash in tombstones)
-      );
-
-      const merged = [...carteFiltrate, ...soloLocali];
-
-      // Deduplicazione di sicurezza
-      const visti = new Map();
-      for (const c of merged) {
-        const key = c.shash || c.nome;
-        if (key && !visti.has(key)) visti.set(key, c);
-      }
-      const mazzoFinale = [...visti.values()];
-
-      await localforage.setItem('mazzo_custom', mazzoFinale);
-      await window.aggiornaListaCustom();
-
-      // Riscrivi il cloud con lo stato pulito (tombstone aggiornati, carte filtrate)
-      await window.backupCloud(mazzoFinale);
-
-      if (soloLocali.length > 0) {
-        await customAlert('☁️ Sincronizzazione:\n' + soloLocali.length + ' carte locali caricate sul cloud.');
-      }
-    } catch(e) { console.error('sincronizzaDaCloud error:', e); }
-  }
-
-  // Sync quando torna online
-  window.addEventListener('online', async () => {
-    if (window._currentUser) await sincronizzaDaCloud();
-  });
-
-  // ── ESPONI aggiungiTombstone per lo script principale ──
-  // Lo script principale chiama backupCloud(mazzo, [shash]) per le cancellazioni.
-  // Non serve altro: backupCloud gestisce già i tombstone internamente.
-
-  // ── COMMUNITY ──
-  window.apriCommunity = async () => {
-    document.getElementById('communityOverlay').style.display = 'flex';
-    document.getElementById('community-search').value = '';
-    await caricaCommunity();
-  };
-
-  window.chiudiCommunity = () => {
-    document.getElementById('communityOverlay').style.display = 'none';
-  };
-
-  async function caricaCommunity() {
-    const status = document.getElementById('community-status');
-    const grid   = document.getElementById('community-grid');
-    status.textContent = 'Caricamento...';
-    grid.innerHTML = '';
-    try {
-      const q = query(collection(db, 'community'), orderBy('likes', 'desc'), limit(100));
-      const snap = await getDocs(q);
-      _communityCards = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      status.textContent = _communityCards.length > 0 ? '' : 'Nessuna carta ancora. Sii il primo a condividere!';
-      renderCommunity(_communityCards);
-    } catch(e) {
-      status.textContent = 'Errore caricamento: ' + e.message;
-    }
-  }
-
-  function renderCommunity(cards) {
-    const ADMIN_UID = '6PF8IUUL2IZLXj8v82yHM133vvg2';
-    const grid = document.getElementById('community-grid');
-    grid.innerHTML = '';
-    if (!cards.length) return;
-    const isAdmin = _currentUser && _currentUser.uid === ADMIN_UID;
-    cards.forEach(carta => {
-      const isOwner = _currentUser && carta.uid === _currentUser.uid;
-      const wrap = document.createElement('div');
-      wrap.className = 'community-card';
-      const img = document.createElement('img');
-      img.src = carta.img;
-      img.title = carta.testo || '';
-      const testo = document.createElement('div');
-      testo.className = 'c-testo';
-      testo.textContent = carta.testo || '';
-      const likes = document.createElement('div');
-      likes.className = 'c-likes';
-      likes.id = 'likes-' + carta.id;
-      likes.textContent = '❤️ ' + (carta.likes || 0);
-      const btns = document.createElement('div');
-      btns.className = 'c-btns';
-      const btnImport = document.createElement('button');
-      btnImport.className = 'c-import';
-      btnImport.textContent = '⬇';
-      btnImport.title = 'Importa nel mazzo';
-      btnImport.onclick = () => importaDaCommunity(carta);
-      const btnLike = document.createElement('button');
-      btnLike.className = 'c-like';
-      btnLike.textContent = '❤';
-      btnLike.title = 'Metti like';
-      btnLike.onclick = () => likeCarta(carta.id);
-      btns.appendChild(btnImport);
-      btns.appendChild(btnLike);
-      if (isOwner || isAdmin) {
-        const btnDel = document.createElement('button');
-        btnDel.className = 'c-like';
-        btnDel.style.background = '#d64040';
-        btnDel.textContent = '🗑';
-        btnDel.title = isAdmin && !isOwner ? 'Elimina carta (admin)' : 'Elimina la tua carta';
-        btnDel.onclick = () => eliminaCartaCommunity(carta.id);
-        btns.appendChild(btnDel);
-      }
-      wrap.appendChild(img);
-      wrap.appendChild(testo);
-      wrap.appendChild(likes);
-      wrap.appendChild(btns);
-      if (isAdmin) {
-        const autore = document.createElement('div');
-        autore.style.cssText = 'font-size:8px;color:#502369;font-weight:bold;text-align:center;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px;';
-        autore.title = 'UID: ' + (carta.uid || 'n/d');
-        autore.textContent = '👤 ' + (carta.autore || 'Sconosciuto');
-        wrap.appendChild(autore);
-      }
-      grid.appendChild(wrap);
-    });
-  }
-
-  window.filtraCommunity = () => {
-    const q = document.getElementById('community-search').value.trim().toLowerCase();
-    if (!q) { renderCommunity(_communityCards); return; }
-    renderCommunity(_communityCards.filter(c => (c.testo || '').toLowerCase().includes(q)));
-  };
-
-  async function importaDaCommunity(carta) {
-    const esistente = await localforage.getItem('mazzo_custom') || [];
-    const testoNorm = (carta.testo || '').toUpperCase().trim();
-    const duplicata = esistente.some(c =>
-      c.shash === carta.shash ||
-      (testoNorm && (c.testo || '').toUpperCase().trim() === testoNorm)
-    );
-    if (duplicata) { await customAlert('Questa carta è già nel tuo mazzo.'); return; }
-    esistente.push({ ...carta, estratta: false, _inModifica: false });
-    await localforage.setItem('mazzo_custom', esistente);
-    await window.aggiornaListaCustom();
-    await window.backupCloud(esistente);
-    await customAlert('Carta importata nel mazzo!');
-  }
-
-  async function likeCarta(id) {
-    if (!_currentUser) { await customAlert('Devi accedere con Google per mettere like.'); return; }
-    try {
-      await updateDoc(doc(db, 'community', id), { likes: increment(1) });
-      const el = document.getElementById('likes-' + id);
-      if (el) {
-        const n = parseInt(el.textContent.replace('❤️ ', '')) + 1;
-        el.textContent = '❤️ ' + n;
-      }
-    } catch(e) { await customAlert('Errore like:\n' + e.message); }
-  }
-
-  async function eliminaCartaCommunity(id) {
-    if (!await customConfirm({ message: 'Eliminare questa carta dalla community?', okText: 'SI', cancelText: 'NO' })) return;
-    try {
-      await deleteDoc(doc(db, 'community', id));
-      const mazzo = await localforage.getItem('mazzo_custom') || [];
-      let aggiornato = false;
-      mazzo.forEach(c => { if (c.communityId === id) { c.communityId = null; aggiornato = true; } });
-      if (aggiornato) {
-        await localforage.setItem('mazzo_custom', mazzo);
-        await window.backupCloud(mazzo);
-        await window.aggiornaListaCustom();
-      }
-      _communityCards = _communityCards.filter(c => c.id !== id);
-      renderCommunity(_communityCards);
-    } catch(e) { await customAlert('Errore eliminazione:\n' + e.message); }
-  }
-
-  window.condividiInCommunity = async (carta) => {
-    if (!_currentUser) { await customAlert('Devi accedere con Google per condividere.'); return; }
-    try {
-      const imgCloud = await comprimiImgPerCloud(carta.img);
-
-      // UPDATE: carta già condivisa
-      if (carta.communityId) {
-        await updateDoc(doc(db, 'community', carta.communityId), {
-          testo: carta.testo || '',
-          img: imgCloud,
-          nome: carta.nome || '',
-          updatedAt: new Date().toISOString()
-        });
-        const idx = _communityCards.findIndex(c => c.id === carta.communityId);
-        if (idx !== -1) { _communityCards[idx].testo = carta.testo; _communityCards[idx].img = imgCloud; }
-        await customAlert('Carta aggiornata nella community! ✏️');
-        return;
-      }
-
-      // CREATE: prima condivisione
-      if (_communityCards.some(c => c.shash === carta.shash)) {
-        await customAlert('Questa carta è già presente nella community.'); return;
-      }
-      const ref = await addDoc(collection(db, 'community'), {
-        testo: carta.testo || '',
-        img: imgCloud,
-        shash: carta.shash || '',
-        nome: carta.nome || '',
-        autore: _currentUser.displayName || _currentUser.email,
-        uid: _currentUser.uid,
-        likes: 0,
-        data: new Date().toISOString()
-      });
-
-      // Salva communityId nel mazzo locale
-      const mazzo = await localforage.getItem('mazzo_custom') || [];
-      const cartaLocale = mazzo.find(c => c.shash === carta.shash);
-      if (cartaLocale) {
-        cartaLocale.communityId = ref.id;
-        carta.communityId = ref.id;
-        await localforage.setItem('mazzo_custom', mazzo);
-        await window.backupCloud(mazzo);
-      }
-      await customAlert('Carta condivisa con la community! 🎉');
-    } catch(e) { await customAlert('Errore condivisione:\n' + e.message); }
-  };
-</script>
-
-<!-- SCRIPT PRINCIPALE -->
-<script>
-  const CUSTOM_KEY = 'mazzo_custom';
-  localforage.config({ name: 'PorkysGame', storeName: 'mazzo_carte' });
-
-  window.addEventListener('load', async () => {
-    const cardBg = document.getElementById('card-bg');
-    await new Promise(resolve => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('GET', cardBg.src);
-      xhr.responseType = 'blob';
-      xhr.onload = () => {
-        const reader = new FileReader();
-        reader.onload = e => { cardBg.src = e.target.result; resolve(); };
-        reader.readAsDataURL(xhr.response);
-      };
-      xhr.onerror = () => resolve();
-      xhr.send();
-    });
-    // Aspetta che la sincronizzazione cloud sia completata (o che si sappia che non serve)
-    // prima di renderizzare il mazzo e proporre il ripristino automatico
-    if (window._syncReady) await window._syncReady;
-    await aggiornaListaCustom();
-    await tentaRipristinoAutomatico();
-  });
-
-  function updateCard() {
-    const raw = document.getElementById('inp-body').value;
-    document.getElementById('card-body-inner').textContent = raw.toUpperCase();
-    document.fonts.ready.then(() => autoFit());
-  }
-
-  function autoFit() {
-    const inner = document.getElementById('card-body-inner');
-    const body  = document.getElementById('card-body');
-    if (!inner.textContent.trim()) return;
-    const maxH = body.clientHeight;
-    const maxW = body.clientWidth - 4;
-    let lo = 8, hi = 300, best = 8;
-    while (lo <= hi) {
-      const mid = Math.floor((lo + hi) / 2);
-      inner.style.fontSize = mid + 'px';
-      void inner.offsetHeight;
-      if (inner.scrollHeight <= maxH && inner.scrollWidth <= maxW + 4) {
-        best = mid; lo = mid + 1;
-      } else { hi = mid - 1; }
-    }
-    inner.style.fontSize = best + 'px';
-  }
-
-  function resetAll() {
-    document.getElementById('inp-body').value = '';
-    document.getElementById('card-body-inner').textContent = '';
-    document.getElementById('inp-body').focus();
-  }
-
-  function loadCardBg(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = function(e) {
-      document.getElementById('card-bg').src = e.target.result;
-      const st = document.getElementById('status-carta');
-      st.textContent = '✔ ' + file.name;
-      st.classList.add('ok');
-    };
-    reader.readAsDataURL(file);
-  }
-
-  async function sha256String(str) {
-    const buf = new TextEncoder().encode(str);
-    const digest = await crypto.subtle.digest('SHA-256', buf);
-    return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2,'0')).join('');
-  }
-
-  function injectPngTextChunk(arrayBuffer, keyword, text) {
-    const encoder = new TextEncoder();
-    const keyBytes = encoder.encode(keyword);
-    const textBytes = encoder.encode(text);
-    const chunkData = new Uint8Array(keyBytes.length + 1 + textBytes.length);
-    chunkData.set(keyBytes, 0);
-    chunkData[keyBytes.length] = 0;
-    chunkData.set(textBytes, keyBytes.length + 1);
-    function crc32(buf) {
-      let crc = 0xFFFFFFFF;
-      const table = new Uint32Array(256);
-      for (let i = 0; i < 256; i++) {
-        let c = i;
-        for (let j = 0; j < 8; j++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
-        table[i] = c;
-      }
-      for (let i = 0; i < buf.length; i++) crc = table[(crc ^ buf[i]) & 0xFF] ^ (crc >>> 8);
-      return (crc ^ 0xFFFFFFFF) >>> 0;
-    }
-    const type = encoder.encode('tEXt');
-    const fullChunk = new Uint8Array(type.length + chunkData.length);
-    fullChunk.set(type); fullChunk.set(chunkData, type.length);
-    const crc = crc32(fullChunk);
-    const chunk = new Uint8Array(12 + chunkData.length);
-    const dv = new DataView(chunk.buffer);
-    dv.setUint32(0, chunkData.length);
-    chunk.set(type, 4);
-    chunk.set(chunkData, 8);
-    dv.setUint32(8 + chunkData.length, crc);
-    const src = new Uint8Array(arrayBuffer);
-    const result = new Uint8Array(src.length + chunk.length);
-    result.set(src.slice(0, 33));
-    result.set(chunk, 33);
-    result.set(src.slice(33), 33 + chunk.length);
-    return result.buffer;
-  }
-
-  function arrayBufferToBase64(buffer) {
-    const bytes = new Uint8Array(buffer);
-    let binary = '';
-    const chunk = 8192;
-    for (let i = 0; i < bytes.length; i += chunk) {
-      binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
-    }
-    return btoa(binary);
-  }
-
-  async function generaCanvas() {
-    const card = document.getElementById('card-container');
-    return await html2canvas(card, {
-      scale: 3, useCORS: true, allowTaint: true,
-      backgroundColor: null, logging: false, imageTimeout: 10000
-    });
-  }
-
-  let _cartellaHandle = null;
-
-  async function salvaFile(dataUrl, filename) {
-    const res = await fetch(dataUrl);
-    const blob = await res.blob();
-    if (window.showDirectoryPicker) {
-      try {
-        if (!_cartellaHandle) _cartellaHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
-        const perm = await _cartellaHandle.requestPermission({ mode: 'readwrite' });
-        if (perm !== 'granted') _cartellaHandle = null;
-      } catch { _cartellaHandle = null; }
-      if (_cartellaHandle) {
-        try {
-          const fileHandle = await _cartellaHandle.getFileHandle(filename, { create: true });
-          const writable = await fileHandle.createWritable();
-          await writable.write(blob);
-          await writable.close();
-          await customAlert('Carta salvata in:\n' + _cartellaHandle.name + '/' + filename);
-          return filename;
-        } catch { _cartellaHandle = null; }
-      }
-    }
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.download = filename;
-    link.href = url;
-    link.click();
-    URL.revokeObjectURL(url);
-    await customAlert('Carta scaricata: ' + filename);
-    return filename;
-  }
-
-  async function downloadCard() {
-    const btn = document.getElementById('btn-dl');
-    btn.classList.add('loading'); btn.disabled = true;
-    try {
-      const testo = document.getElementById('inp-body').value.trim();
-      if (!testo) { await customAlert('Scrivi prima il testo della carta.'); return; }
-      const shash = await sha256String(testo.toUpperCase());
-      const canvas = await generaCanvas();
-      const filename = 'carta_custom_' + shash.slice(0, 8) + '.png';
-      const dataUrl = canvas.toDataURL('image/png');
-      const rawBuf = await (await fetch(dataUrl)).arrayBuffer();
-      const pngBuf = injectPngTextChunk(rawBuf, 'porky_shash', shash);
-      const injectedDataUrl = 'data:image/png;base64,' + arrayBufferToBase64(pngBuf);
-      await salvaFile(injectedDataUrl, filename);
-    } catch(e) {
-      await customAlert('Errore esportazione.\n' + e.message);
-    } finally {
-      btn.classList.remove('loading'); btn.disabled = false;
-    }
-  }
-
-  async function salvaInMazzo() {
-    const btnSalva = document.getElementById('btn-salva');
-    btnSalva.disabled = true;
-    btnSalva.classList.add('loading');
-    try {
-      const testo = document.getElementById('inp-body').value.trim();
-      if (!testo) { await customAlert('Scrivi prima il testo della carta.'); return; }
-      const shash = await sha256String(testo.toUpperCase());
-      const canvas = await generaCanvas();
-      const dataUrl = canvas.toDataURL('image/png');
-      const rawBuf = await (await fetch(dataUrl)).arrayBuffer();
-      const pngBuf = injectPngTextChunk(rawBuf, 'porky_shash', shash);
-      const injectedDataUrl = 'data:image/png;base64,' + arrayBufferToBase64(pngBuf);
-
-      const esistente = await localforage.getItem(CUSTOM_KEY) || [];
-      if (esistente.some(c => c.shash === shash && !c._inModifica)) {
-        await customAlert('Questa carta è già nel mazzo personalizzato.'); return;
-      }
-
-      const cartaInModifica = esistente.find(c => c._inModifica);
-      const nome = cartaInModifica
-        ? cartaInModifica.nome
-        : 'carta_custom_' + shash.slice(0, 8) + '.png';
-      const communityId = cartaInModifica
-        ? (cartaInModifica.communityId || null)
-        : null;
-      // Se c'era una carta in modifica con shash diverso, va nei tombstone
-      const vecchioShash = (cartaInModifica && cartaInModifica.shash !== shash)
-        ? cartaInModifica.shash
-        : null;
-
-      const carta = {
-        hash: null, phash: null, shash, lphash256: null,
-        img: injectedDataUrl, nome, originale: nome,
-        estratta: false, testo, communityId, savedAt: Date.now()
-      };
-
-      const mazzoFinale = esistente.filter(c => !c._inModifica);
-      mazzoFinale.push(carta);
-
-      await localforage.setItem(CUSTOM_KEY, mazzoFinale);
-      await aggiornaListaCustom();
-
-      // Backup cloud: passa vecchioShash come tombstone se la carta è stata modificata
-      if (window.backupCloud) {
-        await window.backupCloud(
-          mazzoFinale,
-          vecchioShash ? [vecchioShash] : []
-        );
-      }
-
-      // Se la carta era condivisa in community, aggiorna automaticamente anche lì
-      if (communityId && window.condividiInCommunity) {
-        await window.condividiInCommunity(carta);
-      }
-
-      document.getElementById('preview-share-wrap').style.display = 'none';
-      resetAll();
-    } catch(e) {
-      await customAlert('Errore salvataggio.\n' + e.message);
-    } finally {
-      btnSalva.disabled = false;
-      btnSalva.classList.remove('loading');
-    }
-  }
-
-  async function esportaBackup() {
-    const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
-    if (!mazzo.length) { await customAlert('Il mazzo è vuoto, niente da salvare.'); return; }
-    if (window.showDirectoryPicker && !_cartellaHandle) {
-      try { _cartellaHandle = await window.showDirectoryPicker({ mode: 'readwrite' }); }
-      catch { _cartellaHandle = null; }
-    }
-    const json = JSON.stringify(mazzo, null, 2);
-    const blob = new Blob([json], { type: 'application/json' });
-    const filename = 'mazzo_custom_backup.json';
-    if (_cartellaHandle) {
-      try {
-        const fileHandle = await _cartellaHandle.getFileHandle(filename, { create: true });
-        const writable = await fileHandle.createWritable();
-        await writable.write(blob); await writable.close();
-      } catch { /* fallback */ }
-    } else {
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url; link.download = filename; link.click();
-      URL.revokeObjectURL(url);
-    }
-    for (const carta of mazzo) {
-      if (!carta.img || !carta.nome) continue;
-      try {
-        const res = await fetch(carta.img);
-        const pngBlob = await res.blob();
-        if (_cartellaHandle) {
-          try {
-            const fh = await _cartellaHandle.getFileHandle(carta.nome, { create: true });
-            const wr = await fh.createWritable();
-            await wr.write(pngBlob); await wr.close();
-          } catch { /* ignora */ }
-        } else {
-          const url = URL.createObjectURL(pngBlob);
-          const link = document.createElement('a');
-          link.href = url; link.download = carta.nome; link.click();
-          URL.revokeObjectURL(url);
-          await new Promise(r => setTimeout(r, 300));
-        }
-      } catch { /* ignora */ }
-    }
-    await customAlert('Backup completato: ' + mazzo.length + ' carte salvate.');
-  }
-
-  async function importaBackup(event) {
-    const file = event.target.files[0];
-    event.target.value = '';
-    if (!file) return;
-    try {
-      const text = await file.text();
-      const dati = JSON.parse(text);
-      if (!Array.isArray(dati)) { await customAlert('File non valido.'); return; }
-      const esistente = await localforage.getItem(CUSTOM_KEY) || [];
-      if (esistente.length > 0) {
-        const scelta = await customConfirm({
-          message: 'Vuoi sostituire il mazzo attuale o unire le carte?\n(Rosso = sostituisci, Oro = unisci)',
-          okText: 'Sostituisci', cancelText: 'Unisci'
-        });
-        if (scelta) {
-          // Sostituisci: deduplicazione interna al file stesso
-          const visti = new Map();
-          for (const c of dati) {
-            const key = c.shash || (c.testo || '').toUpperCase().trim() || c.nome;
-            if (key && !visti.has(key)) visti.set(key, c);
-          }
-          await localforage.setItem(CUSTOM_KEY, [...visti.values()]);
-        } else {
-          const shashEsistenti  = new Set(esistente.map(c => c.shash).filter(Boolean));
-          const testiEsistenti  = new Set(esistente.map(c => (c.testo || '').toUpperCase().trim()).filter(Boolean));
-          const nuove = dati.filter(c => {
-            if (c.shash && shashEsistenti.has(c.shash)) return false;
-            const tn = (c.testo || '').toUpperCase().trim();
-            if (tn && testiEsistenti.has(tn)) return false;
-            return true;
-          });
-          await localforage.setItem(CUSTOM_KEY, [...esistente, ...nuove]);
-          await customAlert('Importate ' + nuove.length + ' carte nuove, ' + (dati.length - nuove.length) + ' duplicate ignorate.');
-          await aggiornaListaCustom();
-          return;
-        }
-      } else {
-        await localforage.setItem(CUSTOM_KEY, dati);
-      }
-      await aggiornaListaCustom();
-      await customAlert('Backup importato: ' + dati.length + ' carte.');
-    } catch(e) { await customAlert('Errore importazione:\n' + e.message); }
-  }
-
-  async function tentaRipristinoAutomatico() {
-    const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
-    if (mazzo.length > 0) return;
-    const ok = await customConfirm({
-      message: 'Il mazzo è vuoto.\nVuoi importare un Backup Mazzo?',
-      okText: 'SI', cancelText: 'NO'
-    });
-    if (ok) document.getElementById('inp-backup').click();
-  }
-
-  async function modificaCarta(idx) {
-    const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
-    const carta = mazzo[idx];
-    if (!carta) return;
-    if (carta._inModifica) {
-      delete carta._inModifica;
-      await localforage.setItem(CUSTOM_KEY, mazzo);
-      await aggiornaListaCustom();
-      resetAll();
-      document.getElementById('preview-share-wrap').style.display = 'none';
-      return;
-    }
-    const inModificaIdx = mazzo.findIndex(c => c._inModifica);
-    if (inModificaIdx !== -1) delete mazzo[inModificaIdx]._inModifica;
-    carta._inModifica = true;
-    await localforage.setItem(CUSTOM_KEY, mazzo);
-    document.getElementById('inp-body').value = carta.testo || '';
-    updateCard();
-    await aggiornaListaCustom();
-    document.getElementById('preview-share-wrap').style.display = 'block';
-  }
-
-  // Condividi la carta attualmente in modifica tramite il pulsante sotto l'anteprima
-  window.condividiCartaInModifica = async function() {
-    const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
-    const carta = mazzo.find(c => c._inModifica);
-    if (!carta) {
-      await customAlert('Seleziona prima una carta dal mazzo (click su ✏️).');
-      return;
-    }
-    if (window.condividiInCommunity) await window.condividiInCommunity(carta);
-  };
-
-  async function eliminaCarta(idx) {
-    const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
-    const carta = mazzo[idx];
-    if (!carta) return;
-    const ok = await customConfirm({
-      message: 'Eliminare la carta "' + (carta.testo || carta.nome) + '"?',
-      okText: 'SI', cancelText: 'NO'
-    });
-    if (!ok) return;
-    mazzo.splice(idx, 1);
-    await localforage.setItem(CUSTOM_KEY, mazzo);
-    await aggiornaListaCustom();
-    if (carta.shash) {
-      if (window.backupCloud) await window.backupCloud(mazzo, [carta.shash]);
-    }
-  }
-
-  async function cancellaTuttoMazzo() {
-    if (!await customConfirm({ message: 'Cancellare tutto il mazzo personalizzato?', okText: 'SI', cancelText: 'NO' })) return;
-    const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
-    const shashes = mazzo.map(c => c.shash).filter(Boolean);
-    await localforage.removeItem(CUSTOM_KEY);
-    await aggiornaListaCustom();
-    if (window.backupCloud) await window.backupCloud([], shashes);
-  }
-
-  function filtraMazzo() {
-    const q = document.getElementById('cerca-mazzo').value.trim().toLowerCase();
-    const lista = document.getElementById('lista-custom');
-    lista.querySelectorAll('.card-item').forEach(item => {
-      const img = item.querySelector('img');
-      const testo = (img ? img.title : '').toLowerCase().replace('(in modifica) ', '');
-      item.style.display = (!q || testo.includes(q)) ? '' : 'none';
-    });
-  }
-
-  async function aggiornaListaCustom() {
-    const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
-    document.getElementById('contatore-custom').textContent = mazzo.length;
-    const lista = document.getElementById('lista-custom');
-    lista.innerHTML = '';
-    mazzo.forEach((carta, idx) => {
-      const wrap = document.createElement('div');
-      wrap.className = 'card-item';
-      const img = document.createElement('img');
-      img.src = carta.img;
-      img.title = carta.testo || carta.nome;
-      img.style.cursor = 'pointer';
-      img.onclick = () => modificaCarta(idx);
-      if (carta._inModifica) {
-        wrap.style.opacity = '0.6';
-        img.style.border = '2px solid #f0c040';
-        img.title = '(in modifica) ' + (carta.testo || carta.nome);
-      }
-      const btns = document.createElement('div');
-      btns.className = 'card-item-btns';
-      const btnMod = document.createElement('button');
-      btnMod.textContent = '✏️'; btnMod.className = 'btn-mod';
-      btnMod.title = 'Modifica carta';
-      btnMod.onclick = () => modificaCarta(idx);
-      const btnDel = document.createElement('button');
-      btnDel.textContent = '🗑'; btnDel.className = 'btn-del';
-      btnDel.title = 'Elimina carta';
-      btnDel.onclick = () => eliminaCarta(idx);
-      btns.appendChild(btnMod);
-      btns.appendChild(btnDel);
-      wrap.appendChild(img);
-      wrap.appendChild(btns);
-      lista.appendChild(wrap);
-    });
-  }
-
-  window.aggiornaListaCustom = aggiornaListaCustom;
-  window.addEventListener('resize', () => document.fonts.ready.then(() => autoFit()));
-
-  // Appena torna la connessione, sincronizza le pending ops
-  window.addEventListener('online', async () => {
-    if (window._currentUser) {
-      await sincronizzaDaCloud();
-    }
-  });
-</script>
-
-<!-- Bottone (?) istruzioni -->
 <div id="infoHelpBtn" title="Istruzioni">?</div>
-<!-- Bottone (i) privacy/credits -->
 <div id="infoPrivacyBtn" title="Privacy e Credits">i</div>
 
-<!-- Overlay Istruzioni -->
 <div id="istruzioniOverlay" class="sheet-overlay" role="dialog" aria-modal="true">
   <div class="sheet-box">
     <div class="sheet-header">
@@ -1405,24 +445,23 @@ input[type="file"] { display: none; }
     </div>
     <div class="sheet-body">
       <ul>
-        <li>Scrivi il testo della carta nel campo apposito:<br>si adatterà automaticamente alle dimensioni della carta</li>
+        <li>Scrivi il testo della carta nel campo apposito: si adatterà automaticamente alle dimensioni della carta</li>
         <li>Clicca ⬇ Scarica PNG per salvare la carta nella tua galleria</li>
         <li>Clicca 💾 Salva nel mazzo per aggiungere la carta al tuo mazzo personalizzato</li>
         <li>Clicca 🗑 Cancella testo per pulire il campo di testo</li>
         <li>Clicca 🗑 Cancella tutto per eliminare tutte le carte del mazzo</li>
         <li>Clicca 💾 Backup Mazzo per scaricare tutte le carte (JSON + PNG)</li>
         <li>Clicca 📂 Importa backup per ripristinare un mazzo da file JSON</li>
-        <li>Clicca sulla carta o su ✏️ per modificarla,<br>clicca una seconda volta per deselezionarla</li>
-        <li>Clicca 🌐 per condividere la carta con la community</li>
+        <li>Clicca sulla carta o su ✏️ per modificarla, clicca una seconda volta per deselezionarla</li>
+        <li>Clicca 🌐 Condividi in community per condividere la carta selezionata</li>
         <li>Clicca 🗑 accanto alla carta per eliminarla dal mazzo</li>
-        <li>☁️ Accedi con Google per il backup automatico nel cloud<br>(necessario anche per condividere le carte con il resto della community)</li>
+        <li>☁️ Accedi con Google per il backup automatico nel cloud (necessario anche per condividere)</li>
         <li>Opzionale: carica uno sfondo personalizzato tramite 📂 Carica sfondo carta</li>
       </ul>
     </div>
   </div>
 </div>
 
-<!-- Overlay Privacy e Credits -->
 <div id="privacyOverlay" class="sheet-overlay" role="dialog" aria-modal="true">
   <div class="sheet-box">
     <div class="sheet-header">
@@ -1438,74 +477,962 @@ input[type="file"] { display: none; }
       <ul>
         <li><b>Credits:</b> Immagini realizzate con AI e poi perfezionate. Audio recuperati da Myinstants (https://www.myinstants.com).</li>
         <li>The MIT License — html2canvas 1.4.1 &lt;https://html2canvas.hertzen.com&gt;<br>
-        Copyright (c) 2022 Niklas von Hertzen &lt;https://hertzen.com&gt;<br>
-        Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"),
-        to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense,
-        and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
-        The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software. THE SOFTWARE IS PROVIDED "AS IS",
-        WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-        IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-        OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.</li>
-        <li>The MIT License — localForage 1.x<br>
-        Copyright (c) 2013-2016 Mozilla<br>
-        Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction,
-        including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so,
-        subject to the following conditions: The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software. THE SOFTWARE IS PROVIDED "AS IS",
-        WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-        IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-        OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.</li>
-        <li>Carlito font by Łukasz Dziedzic — Licensed under the SIL Open Font License 1.1. Source: https://fonts.google.com/specimen/Carlito</li>
-        <li>Firebase SDK — Copyright (c) Google LLC. Use of the Firebase SDK is subject to Google's Terms of Service and Firebase Terms of Service (https://firebase.google.com/terms).
-            The Firebase JavaScript SDK is licensed under the Apache License 2.0.</li>
+        Copyright (c) 2022 Niklas von Hertzen. Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files, to deal in the Software without restriction. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.</li>
+        <li>The MIT License — localForage 1.x — Copyright (c) 2013-2016 Mozilla. Same MIT terms as above.</li>
+        <li>Carlito font by Łukasz Dziedzic — SIL Open Font License 1.1. Source: https://fonts.google.com/specimen/Carlito</li>
+        <li>Firebase SDK — Copyright (c) Google LLC — Apache License 2.0. https://firebase.google.com/terms</li>
       </ul>
-      <p>
-        L'accesso alla fotocamera o alla galleria è richiesto esclusivamente per caricare immagini di sfondo personalizzate per le carte.
-        I file selezionati vengono trasmessi solo come sfondo della carta che hai generato e se decidi di condividere il file anche visti dalla community,
-        ma nessuno può sapere da quale dispositivo sono stati generati, in quanto sarà cura del software canvas ricreare la carta.
-        <br>Solo l'Admin della pagina può vedere il nome utente di coloro che hanno generato la carta una volta condivisa.
-      </p>
+      <p>L'accesso alla fotocamera o alla galleria è richiesto esclusivamente per caricare immagini di sfondo personalizzate.
+         Solo l'Admin della pagina può vedere il nome utente di chi ha condiviso una carta.</p>
     </div>
   </div>
 </div>
 
-<script>
+<script type="module">
+// ═══════════════════════════════════════════════════════
+// IMPORT FIREBASE
+// ═══════════════════════════════════════════════════════
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
+  from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
+import { getFirestore, doc, setDoc, getDoc, collection, getDocs,
+         addDoc, updateDoc, deleteDoc, increment, query, orderBy, limit }
+  from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAuZHO-xS2IJKETIUpn8UF9vF898WZflJ4",
+  authDomain: "community-carte-porky-s-game.firebaseapp.com",
+  projectId: "community-carte-porky-s-game",
+  storageBucket: "community-carte-porky-s-game.firebasestorage.app",
+  messagingSenderId: "249739861540",
+  appId: "1:249739861540:web:c14d3b728e0b31c9b142b1"
+};
+
+const app  = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db   = getFirestore(app);
+
+// ═══════════════════════════════════════════════════════
+// COSTANTI E STATO
+// ═══════════════════════════════════════════════════════
+const CUSTOM_KEY        = 'mazzo_custom';
+const TOMBSTONE_KEY     = 'mazzo_tombstones';
+const TOMBSTONE_TTL_MS  = 30 * 24 * 60 * 60 * 1000; // 30 giorni
+const ADMIN_UID         = '6PF8IUUL2IZLXj8v82yHM133vvg2';
+
+let _currentUser    = null;
+let _communityCards = [];
+let _cartellaHandle = null;
+
+localforage.config({ name: 'PorkysGame', storeName: 'mazzo_carte' });
+
+// ═══════════════════════════════════════════════════════
+// MODAL (alert / confirm)
+// ═══════════════════════════════════════════════════════
+function modalDialog(cfgOrMessage, type = 'alert') {
+  const cfg = (typeof cfgOrMessage === 'string') ? { message: cfgOrMessage } : (cfgOrMessage || {});
+  const { message = '', okText = 'SI', cancelText = 'NO', alertText = 'OK', buttons = [], cancelValue = null } = cfg;
+  return new Promise(resolve => {
+    const overlay   = document.getElementById('modalOverlay');
+    const textEl    = document.getElementById('modalText');
+    const extra     = document.getElementById('modalExtra');
+    const okBtn     = document.getElementById('modalOk');
+    const cancelBtn = document.getElementById('modalCancel');
+    const notifBtn  = document.getElementById('modalNotif');
+
+    extra.innerHTML = ''; extra.style.display = 'none';
+    okBtn.style.display = cancelBtn.style.display = notifBtn.style.display = 'none';
+    textEl.textContent = message;
+
+    // Clona per rimuovere vecchi listener
+    const OK    = okBtn.cloneNode(true);    okBtn.replaceWith(OK);
+    const CA    = cancelBtn.cloneNode(true); cancelBtn.replaceWith(CA);
+    const NO    = notifBtn.cloneNode(true);  notifBtn.replaceWith(NO);
+
+    function cleanup() {
+      overlay.style.display = '';
+      overlay.style.transform = '';
+      overlay.style.transformOrigin = '';
+      extra.innerHTML = ''; extra.style.display = 'none';
+      document.removeEventListener('keydown', onKey);
+    }
+    function close(v) { cleanup(); resolve(v); }
+    function onKey(e) {
+      if (e.key === 'Escape') {
+        if (type === 'alert')   return close(true);
+        if (type === 'confirm') return close(false);
+        if (type === 'choice')  return close(cancelValue);
+      }
+      if (e.key === 'Enter' && (type === 'alert' || type === 'confirm')) return close(true);
+    }
+    function mostraOverlay(focusFn) {
+      overlay.style.display = 'flex';
+      requestAnimationFrame(() => {
+        const vv = window.visualViewport;
+        if (vv && Math.abs(vv.scale - 1) > 0.01) {
+          const s = 1 / vv.scale;
+          overlay.style.transform = `scale(${s})`;
+          overlay.style.transformOrigin = `${vv.offsetLeft + vv.width/2}px ${vv.offsetTop + vv.height/2}px`;
+        }
+        if (focusFn) focusFn();
+      });
+    }
+    document.addEventListener('keydown', onKey);
+
+    if (type === 'alert') {
+      NO.style.display = 'inline-block'; NO.textContent = alertText;
+      NO.addEventListener('click', () => close(true));
+      mostraOverlay(() => NO.focus()); return;
+    }
+    if (type === 'confirm') {
+      OK.style.display = CA.style.display = 'inline-block';
+      OK.textContent = okText; CA.textContent = cancelText;
+      OK.addEventListener('click', () => close(true));
+      CA.addEventListener('click', () => close(false));
+      mostraOverlay(() => OK.focus()); return;
+    }
+    if (type === 'choice') {
+      extra.style.display = 'grid'; extra.style.gap = '10px';
+      extra.style.gridTemplateColumns = 'repeat(2, minmax(120px, 1fr))';
+      for (const b of buttons) {
+        const btn = document.createElement('button');
+        btn.textContent = b.text || 'OK';
+        btn.className = b.className === 'reset' ? 'btn-reset' : 'btn-dl';
+        btn.style.cssText = 'width:100%;padding:8px;font-size:14px;';
+        btn.addEventListener('click', () => close(b.value));
+        extra.appendChild(btn);
+      }
+      mostraOverlay(null); return;
+    }
+    close(cancelValue);
+  });
+}
+const customAlert   = msg => modalDialog(msg, 'alert');
+const customConfirm = cfg => modalDialog(cfg, 'confirm');
+
+// ═══════════════════════════════════════════════════════
+// TOMBSTONE HELPERS
+// ═══════════════════════════════════════════════════════
+async function getTombstones() {
+  return await localforage.getItem(TOMBSTONE_KEY) || {};
+}
+async function setTombstones(t) {
+  await localforage.setItem(TOMBSTONE_KEY, t);
+}
+function purgaTombstones(t) {
+  const now = Date.now();
+  const out = {};
+  for (const [s, ts] of Object.entries(t)) {
+    if (now - ts < TOMBSTONE_TTL_MS) out[s] = ts;
+  }
+  return out;
+}
+
+// ═══════════════════════════════════════════════════════
+// COMPRESSIONE IMMAGINI
+// ═══════════════════════════════════════════════════════
+function comprimiImgPerCloud(dataUrl) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const MAX = 400;
+      const ratio = Math.min(MAX / img.width, MAX / img.height, 1);
+      canvas.width  = Math.round(img.width  * ratio);
+      canvas.height = Math.round(img.height * ratio);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', 0.7));
+    };
+    img.src = dataUrl;
+  });
+}
+
+// ═══════════════════════════════════════════════════════
+// BACKUP CLOUD
+// tombstoneExtra: array di shash da aggiungere ai tombstone prima di scrivere
+// ═══════════════════════════════════════════════════════
+async function backupCloud(mazzo, tombstoneExtra = []) {
+  if (!_currentUser) return;
+  try {
+    let tombstones = await getTombstones();
+    const now = Date.now();
+    for (const s of tombstoneExtra) if (!tombstones[s]) tombstones[s] = now;
+    tombstones = purgaTombstones(tombstones);
+    await setTombstones(tombstones);
+
+    const mazzoCloud = await Promise.all(
+      mazzo.map(async c => ({ ...c, img: await comprimiImgPerCloud(c.img) }))
+    );
+    await setDoc(doc(db, 'users', _currentUser.uid, 'backup', 'mazzo'), {
+      carte: mazzoCloud,
+      tombstones,
+      aggiornato: now
+    });
+  } catch(e) { console.error('backupCloud ERRORE:', e); }
+}
+
+// ═══════════════════════════════════════════════════════
+// SINCRONIZZAZIONE DA CLOUD
+// ═══════════════════════════════════════════════════════
+async function sincronizzaDaCloud() {
+  if (!_currentUser) return;
+  try {
+    const snap = await getDoc(doc(db, 'users', _currentUser.uid, 'backup', 'mazzo'));
+
+    // Primo login: nessun backup cloud → carica locale sul cloud
+    if (!snap.exists()) {
+      const locale = await localforage.getItem(CUSTOM_KEY) || [];
+      if (locale.length > 0) await backupCloud(locale);
+      return;
+    }
+
+    const data        = snap.data();
+    const cloudCarte  = data.carte || [];
+
+    // Merge tombstone: cloud + locali → vince il più recente, poi purga vecchi
+    const cloudTombstones = data.tombstones || {};
+    const localTombstones = await getTombstones();
+    let tombstones = { ...cloudTombstones };
+    for (const [s, ts] of Object.entries(localTombstones)) {
+      if (!tombstones[s] || ts > tombstones[s]) tombstones[s] = ts;
+    }
+    tombstones = purgaTombstones(tombstones);
+    await setTombstones(tombstones);
+
+    // Filtra carte cloud: rimuove quelle nei tombstone
+    const carteFiltrate = cloudCarte.filter(c => !c.shash || !(c.shash in tombstones));
+
+    // Aggiunge carte locali mai sincronizzate e non nei tombstone
+    const locale = await localforage.getItem(CUSTOM_KEY) || [];
+    const cloudShashes = new Set(carteFiltrate.map(c => c.shash).filter(Boolean));
+    const soloLocali = locale.filter(c =>
+      c.shash && !cloudShashes.has(c.shash) && !(c.shash in tombstones)
+    );
+
+    // Merge + deduplicazione
+    const visti = new Map();
+    for (const c of [...carteFiltrate, ...soloLocali]) {
+      const key = c.shash || c.nome;
+      if (key && !visti.has(key)) visti.set(key, c);
+    }
+    const mazzoFinale = [...visti.values()];
+
+    await localforage.setItem(CUSTOM_KEY, mazzoFinale);
+    await aggiornaListaCustom();
+
+    // Riscrivi cloud con stato pulito
+    await backupCloud(mazzoFinale);
+
+    if (soloLocali.length > 0) {
+      await customAlert('☁️ Sincronizzazione:\n' + soloLocali.length + ' carte locali caricate sul cloud.');
+    }
+  } catch(e) { console.error('sincronizzaDaCloud error:', e); }
+}
+
+// ═══════════════════════════════════════════════════════
+// AUTH
+// ═══════════════════════════════════════════════════════
+onAuthStateChanged(auth, async user => {
+  _currentUser = user;
+  const loginInfo = document.getElementById('login-info');
+  const btnLogin  = document.getElementById('btn-login');
+  const btnLogout = document.getElementById('btn-logout');
+  const btnCom    = document.getElementById('btn-community');
+  if (user) {
+    loginInfo.innerHTML = (user.photoURL ? `<img src="${user.photoURL}" alt="">` : '') +
+                          ' ' + (user.displayName || user.email);
+    btnLogin.style.display  = 'none';
+    btnLogout.style.display = 'inline-block';
+    btnCom.style.display    = 'inline-block';
+    await sincronizzaDaCloud();
+    await aggiornaListaCustom();
+    await tentaRipristinoAutomatico();
+  } else {
+    loginInfo.textContent   = 'Non connesso';
+    btnLogin.style.display  = 'inline-block';
+    btnLogout.style.display = 'none';
+    btnCom.style.display    = 'none';
+  }
+});
+
+document.getElementById('btn-login').addEventListener('click', async () => {
+  try {
+    await signInWithPopup(auth, new GoogleAuthProvider());
+  } catch(e) {
+    if (e.code !== 'auth/popup-closed-by-user') await customAlert('Errore login:\n' + e.message);
+  }
+});
+
+document.getElementById('btn-logout').addEventListener('click', async () => {
+  if (!await customConfirm({ message: 'Disconnettersi da Google?', okText: 'SI', cancelText: 'NO' })) return;
+  await signOut(auth);
+});
+
+window.addEventListener('online', async () => {
+  if (_currentUser) await sincronizzaDaCloud();
+});
+
+// ═══════════════════════════════════════════════════════
+// COMMUNITY
+// ═══════════════════════════════════════════════════════
+document.getElementById('btn-community').addEventListener('click', async () => {
+  document.getElementById('communityOverlay').style.display = 'flex';
+  document.getElementById('community-search').value = '';
+  await caricaCommunity();
+});
+
+document.getElementById('btn-chiudi-community').addEventListener('click', () => {
+  document.getElementById('communityOverlay').style.display = 'none';
+});
+
+async function caricaCommunity() {
+  const status = document.getElementById('community-status');
+  const grid   = document.getElementById('community-grid');
+  status.textContent = 'Caricamento...';
+  grid.innerHTML = '';
+  try {
+    const q = query(collection(db, 'community'), orderBy('likes', 'desc'), limit(100));
+    const snap = await getDocs(q);
+    _communityCards = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    status.textContent = _communityCards.length > 0 ? '' : 'Nessuna carta ancora. Sii il primo a condividere!';
+    renderCommunity(_communityCards);
+  } catch(e) {
+    status.textContent = 'Errore caricamento: ' + e.message;
+  }
+}
+
+function renderCommunity(cards) {
+  const grid = document.getElementById('community-grid');
+  grid.innerHTML = '';
+  if (!cards.length) return;
+  const isAdmin = _currentUser && _currentUser.uid === ADMIN_UID;
+  cards.forEach(carta => {
+    const isOwner = _currentUser && carta.uid === _currentUser.uid;
+    const wrap = document.createElement('div');
+    wrap.className = 'community-card';
+
+    const img = document.createElement('img');
+    img.src = carta.img; img.title = carta.testo || '';
+
+    const testo = document.createElement('div');
+    testo.className = 'c-testo'; testo.textContent = carta.testo || '';
+
+    const likes = document.createElement('div');
+    likes.className = 'c-likes'; likes.id = 'likes-' + carta.id;
+    likes.textContent = '❤️ ' + (carta.likes || 0);
+
+    const btns = document.createElement('div');
+    btns.className = 'c-btns';
+
+    const btnImport = document.createElement('button');
+    btnImport.className = 'c-import'; btnImport.textContent = '⬇';
+    btnImport.title = 'Importa nel mazzo';
+    btnImport.onclick = () => importaDaCommunity(carta);
+
+    const btnLike = document.createElement('button');
+    btnLike.className = 'c-like'; btnLike.textContent = '❤';
+    btnLike.title = 'Metti like';
+    btnLike.onclick = () => likeCarta(carta.id);
+
+    btns.appendChild(btnImport);
+    btns.appendChild(btnLike);
+
+    if (isOwner || isAdmin) {
+      const btnDel = document.createElement('button');
+      btnDel.className = 'c-like'; btnDel.style.background = '#d64040';
+      btnDel.textContent = '🗑';
+      btnDel.title = isAdmin && !isOwner ? 'Elimina carta (admin)' : 'Elimina la tua carta';
+      btnDel.onclick = () => eliminaCartaCommunity(carta.id);
+      btns.appendChild(btnDel);
+    }
+
+    wrap.appendChild(img); wrap.appendChild(testo);
+    wrap.appendChild(likes); wrap.appendChild(btns);
+
+    if (isAdmin) {
+      const autore = document.createElement('div');
+      autore.style.cssText = 'font-size:8px;color:#502369;font-weight:bold;text-align:center;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px;';
+      autore.title = 'UID: ' + (carta.uid || 'n/d');
+      autore.textContent = '👤 ' + (carta.autore || 'Sconosciuto');
+      wrap.appendChild(autore);
+    }
+    grid.appendChild(wrap);
+  });
+}
+
+document.getElementById('community-search').addEventListener('input', () => {
+  const q = document.getElementById('community-search').value.trim().toLowerCase();
+  renderCommunity(q ? _communityCards.filter(c => (c.testo || '').toLowerCase().includes(q)) : _communityCards);
+});
+
+async function importaDaCommunity(carta) {
+  const esistente = await localforage.getItem(CUSTOM_KEY) || [];
+  const testoNorm = (carta.testo || '').toUpperCase().trim();
+  const duplicata = esistente.some(c =>
+    c.shash === carta.shash ||
+    (testoNorm && (c.testo || '').toUpperCase().trim() === testoNorm)
+  );
+  if (duplicata) { await customAlert('Questa carta è già nel tuo mazzo.'); return; }
+  esistente.push({ ...carta, estratta: false, _inModifica: false });
+  await localforage.setItem(CUSTOM_KEY, esistente);
+  await aggiornaListaCustom();
+  await backupCloud(esistente);
+  await customAlert('Carta importata nel mazzo!');
+}
+
+async function likeCarta(id) {
+  if (!_currentUser) { await customAlert('Devi accedere con Google per mettere like.'); return; }
+  try {
+    await updateDoc(doc(db, 'community', id), { likes: increment(1) });
+    const el = document.getElementById('likes-' + id);
+    if (el) el.textContent = '❤️ ' + (parseInt(el.textContent.replace('❤️ ', '')) + 1);
+  } catch(e) { await customAlert('Errore like:\n' + e.message); }
+}
+
+async function eliminaCartaCommunity(id) {
+  if (!await customConfirm({ message: 'Eliminare questa carta dalla community?', okText: 'SI', cancelText: 'NO' })) return;
+  try {
+    await deleteDoc(doc(db, 'community', id));
+    const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
+    let aggiornato = false;
+    mazzo.forEach(c => { if (c.communityId === id) { c.communityId = null; aggiornato = true; } });
+    if (aggiornato) {
+      await localforage.setItem(CUSTOM_KEY, mazzo);
+      await backupCloud(mazzo);
+      await aggiornaListaCustom();
+    }
+    _communityCards = _communityCards.filter(c => c.id !== id);
+    renderCommunity(_communityCards);
+  } catch(e) { await customAlert('Errore eliminazione:\n' + e.message); }
+}
+
+async function condividiInCommunity(carta) {
+  if (!_currentUser) { await customAlert('Devi accedere con Google per condividere.'); return; }
+  try {
+    const imgCloud = await comprimiImgPerCloud(carta.img);
+
+    // UPDATE: carta già condivisa in precedenza
+    if (carta.communityId) {
+      await updateDoc(doc(db, 'community', carta.communityId), {
+        testo: carta.testo || '', img: imgCloud,
+        nome: carta.nome || '', updatedAt: new Date().toISOString()
+      });
+      const idx = _communityCards.findIndex(c => c.id === carta.communityId);
+      if (idx !== -1) { _communityCards[idx].testo = carta.testo; _communityCards[idx].img = imgCloud; }
+      await customAlert('Carta aggiornata nella community! ✏️');
+      return;
+    }
+
+    // CREATE: prima condivisione
+    if (_communityCards.some(c => c.shash === carta.shash)) {
+      await customAlert('Questa carta è già presente nella community.'); return;
+    }
+    const ref = await addDoc(collection(db, 'community'), {
+      testo: carta.testo || '', img: imgCloud, shash: carta.shash || '',
+      nome: carta.nome || '', autore: _currentUser.displayName || _currentUser.email,
+      uid: _currentUser.uid, likes: 0, data: new Date().toISOString()
+    });
+
+    // Salva communityId nel mazzo locale e sul cloud
+    const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
+    const cartaLocale = mazzo.find(c => c.shash === carta.shash);
+    if (cartaLocale) {
+      cartaLocale.communityId = ref.id;
+      carta.communityId = ref.id;
+      await localforage.setItem(CUSTOM_KEY, mazzo);
+      await backupCloud(mazzo);
+    }
+    await customAlert('Carta condivisa con la community! 🎉');
+  } catch(e) { await customAlert('Errore condivisione:\n' + e.message); }
+}
+
+// ═══════════════════════════════════════════════════════
+// EDITOR CARTA
+// ═══════════════════════════════════════════════════════
+function updateCard() {
+  const raw = document.getElementById('inp-body').value;
+  document.getElementById('card-body-inner').textContent = raw.toUpperCase();
+  document.fonts.ready.then(() => autoFit());
+}
+
+function autoFit() {
+  const inner = document.getElementById('card-body-inner');
+  const body  = document.getElementById('card-body');
+  if (!inner.textContent.trim()) return;
+  const maxH = body.clientHeight;
+  const maxW = body.clientWidth - 4;
+  let lo = 8, hi = 300, best = 8;
+  while (lo <= hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    inner.style.fontSize = mid + 'px';
+    void inner.offsetHeight;
+    if (inner.scrollHeight <= maxH && inner.scrollWidth <= maxW + 4) { best = mid; lo = mid + 1; }
+    else { hi = mid - 1; }
+  }
+  inner.style.fontSize = best + 'px';
+}
+
+function resetAll() {
+  document.getElementById('inp-body').value = '';
+  document.getElementById('card-body-inner').textContent = '';
+  document.getElementById('inp-body').focus();
+}
+
+document.getElementById('inp-body').addEventListener('input', updateCard);
+document.getElementById('btn-reset-testo').addEventListener('click', resetAll);
+window.addEventListener('resize', () => document.fonts.ready.then(() => autoFit()));
+
+document.getElementById('btn-carica-sfondo').addEventListener('click', () => {
+  document.getElementById('inp-carta').click();
+});
+document.getElementById('inp-carta').addEventListener('change', event => {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    document.getElementById('card-bg').src = e.target.result;
+    const st = document.getElementById('status-carta');
+    st.textContent = '✔ ' + file.name; st.classList.add('ok');
+  };
+  reader.readAsDataURL(file);
+});
+
+// ═══════════════════════════════════════════════════════
+// UTILITY PNG
+// ═══════════════════════════════════════════════════════
+async function sha256String(str) {
+  const buf = new TextEncoder().encode(str);
+  const digest = await crypto.subtle.digest('SHA-256', buf);
+  return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+function injectPngTextChunk(arrayBuffer, keyword, text) {
+  const encoder = new TextEncoder();
+  const keyBytes = encoder.encode(keyword);
+  const textBytes = encoder.encode(text);
+  const chunkData = new Uint8Array(keyBytes.length + 1 + textBytes.length);
+  chunkData.set(keyBytes, 0); chunkData[keyBytes.length] = 0;
+  chunkData.set(textBytes, keyBytes.length + 1);
+  function crc32(buf) {
+    let crc = 0xFFFFFFFF;
+    const table = new Uint32Array(256);
+    for (let i = 0; i < 256; i++) {
+      let c = i;
+      for (let j = 0; j < 8; j++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      table[i] = c;
+    }
+    for (let i = 0; i < buf.length; i++) crc = table[(crc ^ buf[i]) & 0xFF] ^ (crc >>> 8);
+    return (crc ^ 0xFFFFFFFF) >>> 0;
+  }
+  const type = encoder.encode('tEXt');
+  const fullChunk = new Uint8Array(type.length + chunkData.length);
+  fullChunk.set(type); fullChunk.set(chunkData, type.length);
+  const crc = crc32(fullChunk);
+  const chunk = new Uint8Array(12 + chunkData.length);
+  const dv = new DataView(chunk.buffer);
+  dv.setUint32(0, chunkData.length); chunk.set(type, 4); chunk.set(chunkData, 8);
+  dv.setUint32(8 + chunkData.length, crc);
+  const src = new Uint8Array(arrayBuffer);
+  const result = new Uint8Array(src.length + chunk.length);
+  result.set(src.slice(0, 33)); result.set(chunk, 33); result.set(src.slice(33), 33 + chunk.length);
+  return result.buffer;
+}
+
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunk = 8192;
+  for (let i = 0; i < bytes.length; i += chunk)
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  return btoa(binary);
+}
+
+async function generaCanvas() {
+  return await html2canvas(document.getElementById('card-container'), {
+    scale: 3, useCORS: true, allowTaint: true,
+    backgroundColor: null, logging: false, imageTimeout: 10000
+  });
+}
+
+// ═══════════════════════════════════════════════════════
+// SALVA FILE (download / directory picker)
+// ═══════════════════════════════════════════════════════
+async function salvaFile(dataUrl, filename) {
+  const res = await fetch(dataUrl);
+  const blob = await res.blob();
+  if (window.showDirectoryPicker) {
+    try {
+      if (!_cartellaHandle) _cartellaHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+      const perm = await _cartellaHandle.requestPermission({ mode: 'readwrite' });
+      if (perm !== 'granted') _cartellaHandle = null;
+    } catch { _cartellaHandle = null; }
+    if (_cartellaHandle) {
+      try {
+        const fh = await _cartellaHandle.getFileHandle(filename, { create: true });
+        const wr = await fh.createWritable();
+        await wr.write(blob); await wr.close();
+        await customAlert('Carta salvata in:\n' + _cartellaHandle.name + '/' + filename);
+        return filename;
+      } catch { _cartellaHandle = null; }
+    }
+  }
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.download = filename; link.href = url; link.click();
+  URL.revokeObjectURL(url);
+  await customAlert('Carta scaricata: ' + filename);
+  return filename;
+}
+
+// ═══════════════════════════════════════════════════════
+// DOWNLOAD PNG
+// ═══════════════════════════════════════════════════════
+document.getElementById('btn-dl').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-dl');
+  btn.classList.add('loading'); btn.disabled = true;
+  try {
+    const testo = document.getElementById('inp-body').value.trim();
+    if (!testo) { await customAlert('Scrivi prima il testo della carta.'); return; }
+    const shash    = await sha256String(testo.toUpperCase());
+    const canvas   = await generaCanvas();
+    const filename = 'carta_custom_' + shash.slice(0, 8) + '.png';
+    const dataUrl  = canvas.toDataURL('image/png');
+    const rawBuf   = await (await fetch(dataUrl)).arrayBuffer();
+    const pngBuf   = injectPngTextChunk(rawBuf, 'porky_shash', shash);
+    await salvaFile('data:image/png;base64,' + arrayBufferToBase64(pngBuf), filename);
+  } catch(e) {
+    await customAlert('Errore esportazione.\n' + e.message);
+  } finally {
+    btn.classList.remove('loading'); btn.disabled = false;
+  }
+});
+
+// ═══════════════════════════════════════════════════════
+// SALVA NEL MAZZO
+// ═══════════════════════════════════════════════════════
+document.getElementById('btn-salva').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-salva');
+  btn.disabled = true; btn.classList.add('loading');
+  try {
+    const testo = document.getElementById('inp-body').value.trim();
+    if (!testo) { await customAlert('Scrivi prima il testo della carta.'); return; }
+    const shash  = await sha256String(testo.toUpperCase());
+    const canvas = await generaCanvas();
+    const dataUrl = canvas.toDataURL('image/png');
+    const rawBuf  = await (await fetch(dataUrl)).arrayBuffer();
+    const pngBuf  = injectPngTextChunk(rawBuf, 'porky_shash', shash);
+    const injectedDataUrl = 'data:image/png;base64,' + arrayBufferToBase64(pngBuf);
+
+    const esistente = await localforage.getItem(CUSTOM_KEY) || [];
+    if (esistente.some(c => c.shash === shash && !c._inModifica)) {
+      await customAlert('Questa carta è già nel mazzo personalizzato.'); return;
+    }
+
+    const cartaInModifica = esistente.find(c => c._inModifica);
+    const nome        = cartaInModifica ? cartaInModifica.nome : 'carta_custom_' + shash.slice(0, 8) + '.png';
+    const communityId = cartaInModifica ? (cartaInModifica.communityId || null) : null;
+    // Se il testo è cambiato, il vecchio shash va nei tombstone
+    const vecchioShash = (cartaInModifica && cartaInModifica.shash !== shash)
+      ? cartaInModifica.shash : null;
+
+    const carta = {
+      hash: null, phash: null, shash, lphash256: null,
+      img: injectedDataUrl, nome, originale: nome,
+      estratta: false, testo, communityId, savedAt: Date.now()
+    };
+
+    const mazzoFinale = esistente.filter(c => !c._inModifica);
+    mazzoFinale.push(carta);
+
+    await localforage.setItem(CUSTOM_KEY, mazzoFinale);
+    await aggiornaListaCustom();
+    await backupCloud(mazzoFinale, vecchioShash ? [vecchioShash] : []);
+
+    // Se la carta era condivisa in community, aggiorna automaticamente anche lì
+    if (communityId) await condividiInCommunity(carta);
+
+    document.getElementById('preview-share-wrap').style.display = 'none';
+    resetAll();
+  } catch(e) {
+    await customAlert('Errore salvataggio.\n' + e.message);
+  } finally {
+    btn.disabled = false; btn.classList.remove('loading');
+  }
+});
+
+// ═══════════════════════════════════════════════════════
+// CONDIVIDI CARTA IN MODIFICA (pulsante sotto anteprima)
+// ═══════════════════════════════════════════════════════
+document.getElementById('btn-condividi-preview').addEventListener('click', async () => {
+  const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
+  const carta = mazzo.find(c => c._inModifica);
+  if (!carta) { await customAlert('Seleziona prima una carta dal mazzo (click su ✏️).'); return; }
+  await condividiInCommunity(carta);
+});
+
+// ═══════════════════════════════════════════════════════
+// GESTIONE MAZZO
+// ═══════════════════════════════════════════════════════
+async function aggiornaListaCustom() {
+  const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
+  document.getElementById('contatore-custom').textContent = mazzo.length;
+  const lista = document.getElementById('lista-custom');
+  lista.innerHTML = '';
+  mazzo.forEach((carta, idx) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'card-item';
+
+    const img = document.createElement('img');
+    img.src = carta.img;
+    img.title = carta.testo || carta.nome;
+    img.style.cursor = 'pointer';
+    img.onclick = () => modificaCarta(idx);
+
+    if (carta._inModifica) {
+      wrap.style.opacity = '0.6';
+      img.style.border = '2px solid #f0c040';
+      img.title = '(in modifica) ' + (carta.testo || carta.nome);
+    }
+
+    const btns = document.createElement('div');
+    btns.className = 'card-item-btns';
+
+    const btnMod = document.createElement('button');
+    btnMod.textContent = '✏️'; btnMod.className = 'btn-mod';
+    btnMod.title = 'Modifica carta';
+    btnMod.onclick = () => modificaCarta(idx);
+
+    const btnDel = document.createElement('button');
+    btnDel.textContent = '🗑'; btnDel.className = 'btn-del';
+    btnDel.title = 'Elimina carta';
+    btnDel.onclick = () => eliminaCarta(idx);
+
+    btns.appendChild(btnMod);
+    btns.appendChild(btnDel);
+    wrap.appendChild(img);
+    wrap.appendChild(btns);
+    lista.appendChild(wrap);
+  });
+}
+
+async function modificaCarta(idx) {
+  const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
+  const carta = mazzo[idx];
+  if (!carta) return;
+
+  // Secondo click: deseleziona
+  if (carta._inModifica) {
+    delete carta._inModifica;
+    await localforage.setItem(CUSTOM_KEY, mazzo);
+    await aggiornaListaCustom();
+    resetAll();
+    document.getElementById('preview-share-wrap').style.display = 'none';
+    return;
+  }
+
+  // Deseleziona eventuale altra carta in modifica
+  const prev = mazzo.findIndex(c => c._inModifica);
+  if (prev !== -1) delete mazzo[prev]._inModifica;
+
+  carta._inModifica = true;
+  await localforage.setItem(CUSTOM_KEY, mazzo);
+  document.getElementById('inp-body').value = carta.testo || '';
+  updateCard();
+  await aggiornaListaCustom();
+  document.getElementById('preview-share-wrap').style.display = 'block';
+}
+
+async function eliminaCarta(idx) {
+  const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
+  const carta = mazzo[idx];
+  if (!carta) return;
+  if (!await customConfirm({
+    message: 'Eliminare la carta "' + (carta.testo || carta.nome) + '"?',
+    okText: 'SI', cancelText: 'NO'
+  })) return;
+  mazzo.splice(idx, 1);
+  await localforage.setItem(CUSTOM_KEY, mazzo);
+  await aggiornaListaCustom();
+  if (carta.shash) await backupCloud(mazzo, [carta.shash]);
+}
+
+document.getElementById('btn-cancella-tutto').addEventListener('click', async () => {
+  if (!await customConfirm({ message: 'Cancellare tutto il mazzo personalizzato?', okText: 'SI', cancelText: 'NO' })) return;
+  const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
+  const shashes = mazzo.map(c => c.shash).filter(Boolean);
+  await localforage.removeItem(CUSTOM_KEY);
+  await aggiornaListaCustom();
+  await backupCloud([], shashes);
+});
+
+document.getElementById('cerca-mazzo').addEventListener('input', () => {
+  const q = document.getElementById('cerca-mazzo').value.trim().toLowerCase();
+  document.getElementById('lista-custom').querySelectorAll('.card-item').forEach(item => {
+    const t = (item.querySelector('img')?.title || '').toLowerCase().replace('(in modifica) ', '');
+    item.style.display = (!q || t.includes(q)) ? '' : 'none';
+  });
+});
+
+// ═══════════════════════════════════════════════════════
+// BACKUP / IMPORTA
+// ═══════════════════════════════════════════════════════
+document.getElementById('btn-esporta-backup').addEventListener('click', async () => {
+  const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
+  if (!mazzo.length) { await customAlert('Il mazzo è vuoto, niente da salvare.'); return; }
+  if (window.showDirectoryPicker && !_cartellaHandle) {
+    try { _cartellaHandle = await window.showDirectoryPicker({ mode: 'readwrite' }); }
+    catch { _cartellaHandle = null; }
+  }
+  const blob = new Blob([JSON.stringify(mazzo, null, 2)], { type: 'application/json' });
+  const filename = 'mazzo_custom_backup.json';
+  if (_cartellaHandle) {
+    try {
+      const fh = await _cartellaHandle.getFileHandle(filename, { create: true });
+      const wr = await fh.createWritable();
+      await wr.write(blob); await wr.close();
+    } catch { _cartellaHandle = null; }
+  }
+  if (!_cartellaHandle) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url; link.download = filename; link.click();
+    URL.revokeObjectURL(url);
+  }
+  for (const carta of mazzo) {
+    if (!carta.img || !carta.nome) continue;
+    try {
+      const pngBlob = await (await fetch(carta.img)).blob();
+      if (_cartellaHandle) {
+        try {
+          const fh = await _cartellaHandle.getFileHandle(carta.nome, { create: true });
+          const wr = await fh.createWritable();
+          await wr.write(pngBlob); await wr.close();
+        } catch { /* ignora */ }
+      } else {
+        const url = URL.createObjectURL(pngBlob);
+        const link = document.createElement('a');
+        link.href = url; link.download = carta.nome; link.click();
+        URL.revokeObjectURL(url);
+        await new Promise(r => setTimeout(r, 300));
+      }
+    } catch { /* ignora */ }
+  }
+  await customAlert('Backup completato: ' + mazzo.length + ' carte salvate.');
+});
+
+document.getElementById('btn-importa-backup').addEventListener('click', () => {
+  document.getElementById('inp-backup').click();
+});
+
+document.getElementById('inp-backup').addEventListener('change', async event => {
+  const file = event.target.files[0];
+  event.target.value = '';
+  if (!file) return;
+  try {
+    const dati = JSON.parse(await file.text());
+    if (!Array.isArray(dati)) { await customAlert('File non valido.'); return; }
+    const esistente = await localforage.getItem(CUSTOM_KEY) || [];
+    if (esistente.length > 0) {
+      const scelta = await customConfirm({
+        message: 'Vuoi sostituire il mazzo attuale o unire le carte?\n(Rosso = sostituisci, Oro = unisci)',
+        okText: 'Sostituisci', cancelText: 'Unisci'
+      });
+      if (scelta) {
+        const visti = new Map();
+        for (const c of dati) {
+          const key = c.shash || (c.testo || '').toUpperCase().trim() || c.nome;
+          if (key && !visti.has(key)) visti.set(key, c);
+        }
+        await localforage.setItem(CUSTOM_KEY, [...visti.values()]);
+      } else {
+        const shashSet = new Set(esistente.map(c => c.shash).filter(Boolean));
+        const testiSet = new Set(esistente.map(c => (c.testo || '').toUpperCase().trim()).filter(Boolean));
+        const nuove = dati.filter(c => {
+          if (c.shash && shashSet.has(c.shash)) return false;
+          const tn = (c.testo || '').toUpperCase().trim();
+          if (tn && testiSet.has(tn)) return false;
+          return true;
+        });
+        await localforage.setItem(CUSTOM_KEY, [...esistente, ...nuove]);
+        await customAlert('Importate ' + nuove.length + ' carte nuove, ' + (dati.length - nuove.length) + ' duplicate ignorate.');
+        await aggiornaListaCustom();
+        return;
+      }
+    } else {
+      await localforage.setItem(CUSTOM_KEY, dati);
+    }
+    await aggiornaListaCustom();
+    await customAlert('Backup importato: ' + dati.length + ' carte.');
+  } catch(e) { await customAlert('Errore importazione:\n' + e.message); }
+});
+
+// ═══════════════════════════════════════════════════════
+// RIPRISTINO AUTOMATICO
+// ═══════════════════════════════════════════════════════
+async function tentaRipristinoAutomatico() {
+  const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
+  if (mazzo.length > 0) return;
+  if (await customConfirm({ message: 'Il mazzo è vuoto.\nVuoi importare un Backup Mazzo?', okText: 'SI', cancelText: 'NO' })) {
+    document.getElementById('inp-backup').click();
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// OVERLAY ISTRUZIONI E PRIVACY
+// ═══════════════════════════════════════════════════════
 (function() {
-  // ── Privacy ──
-  const privacyBtn     = document.getElementById('infoPrivacyBtn');
-  const privacyOverlay = document.getElementById('privacyOverlay');
-  const privacyClose   = document.getElementById('privacyClose');
-  function openPrivacy()  { privacyOverlay.style.display = 'flex'; }
-  function closePrivacy() { privacyOverlay.style.display = 'none'; }
-  privacyBtn.addEventListener('click', openPrivacy);
-  privacyClose.addEventListener('click', closePrivacy);
-  privacyOverlay.addEventListener('click', e => { if (e.target === privacyOverlay) closePrivacy(); });
-
-  // ── Istruzioni ──
-  const helpBtn           = document.getElementById('infoHelpBtn');
+  const privacyOverlay    = document.getElementById('privacyOverlay');
   const istruzioniOverlay = document.getElementById('istruzioniOverlay');
-  const istruzioniClose   = document.getElementById('istruzioniClose');
-  function openIstruzioni()  { istruzioniOverlay.style.display = 'flex'; }
-  function closeIstruzioni() { istruzioniOverlay.style.display = 'none'; }
-  helpBtn.addEventListener('click', openIstruzioni);
-  istruzioniClose.addEventListener('click', closeIstruzioni);
-  istruzioniOverlay.addEventListener('click', e => { if (e.target === istruzioniOverlay) closeIstruzioni(); });
 
-  // Escape chiude l'overlay aperto
+  document.getElementById('infoPrivacyBtn').addEventListener('click', () => { privacyOverlay.style.display = 'flex'; });
+  document.getElementById('privacyClose').addEventListener('click',   () => { privacyOverlay.style.display = 'none'; });
+  privacyOverlay.addEventListener('click', e => { if (e.target === privacyOverlay) privacyOverlay.style.display = 'none'; });
+
+  document.getElementById('infoHelpBtn').addEventListener('click',      () => { istruzioniOverlay.style.display = 'flex'; });
+  document.getElementById('istruzioniClose').addEventListener('click',  () => { istruzioniOverlay.style.display = 'none'; });
+  istruzioniOverlay.addEventListener('click', e => { if (e.target === istruzioniOverlay) istruzioniOverlay.style.display = 'none'; });
+
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
-      if (istruzioniOverlay.style.display === 'flex') closeIstruzioni();
-      else if (privacyOverlay.style.display === 'flex') closePrivacy();
+      if (istruzioniOverlay.style.display === 'flex') istruzioniOverlay.style.display = 'none';
+      else if (privacyOverlay.style.display === 'flex') privacyOverlay.style.display = 'none';
     }
   });
 
-  // Mostra istruzioni al primo accesso o dopo 1 giorno
   const ora = Date.now();
   const ultimaVisita = parseInt(localStorage.getItem('porky_last_visit') || '0');
   if (!ultimaVisita || (ora - ultimaVisita) > 24 * 60 * 60 * 1000) {
-    setTimeout(openIstruzioni, 300);
+    setTimeout(() => { istruzioniOverlay.style.display = 'flex'; }, 300);
   }
   localStorage.setItem('porky_last_visit', ora);
 })();
+
+// ═══════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════
+window.addEventListener('load', async () => {
+  // Converti l'immagine di sfondo in base64 per html2canvas
+  const cardBg = document.getElementById('card-bg');
+  await new Promise(resolve => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', cardBg.src);
+    xhr.responseType = 'blob';
+    xhr.onload = () => {
+      const reader = new FileReader();
+      reader.onload = e => { cardBg.src = e.target.result; resolve(); };
+      reader.readAsDataURL(xhr.response);
+    };
+    xhr.onerror = () => resolve();
+    xhr.send();
+  });
+  // Se l'utente non è loggato, rendiamo subito il mazzo locale.
+  // Se è loggato, onAuthStateChanged gestisce sync + render + ripristino.
+  if (!auth.currentUser) {
+    await aggiornaListaCustom();
+    await tentaRipristinoAutomatico();
+  }
+});
+
 </script>
 </body>
 </html>
