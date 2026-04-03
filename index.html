@@ -617,127 +617,126 @@ window.loginGoogle = async () => {
 }
 window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
   if (!_currentUser) return;
-
   try {
     const docRef = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo');
     const snapCloud = await getDoc(docRef);
-
+    // Leggi tombstone esistenti dal cloud e uniscili — non sovrascrivere mai
     const rawCloud = snapCloud.exists() ? (snapCloud.data().deleted_shashes || {}) : {};
-
     const cloudTombstones = Array.isArray(rawCloud)
       ? Object.fromEntries(rawCloud.map(s => [s, 0]))
       : rawCloud;
-
     const now = Date.now();
-
-    const merged = { ...cloudTombstones };
-
+    const tombstones = { ...cloudTombstones };
     for (const [s, ts] of Object.entries(_deletedShashes)) {
-      if (merged[s] === undefined || ts > merged[s]) {
-        merged[s] = ts;
-      }
+      if (tombstones[s] === undefined || ts > tombstones[s]) tombstones[s] = ts;
     }
-
     for (const s of extraDeletedShashes) {
-      if (_deletedShashes[s] !== undefined) {
-        if (merged[s] === undefined || _deletedShashes[s] > merged[s]) {
-          merged[s] = _deletedShashes[s];
-        }
-      }
+      if (!tombstones[s]) tombstones[s] = now;
     }
-
-    _deletedShashes = merged;
-
+    _deletedShashes = tombstones;
     const mazzoCloud = await Promise.all(mazzo.map(async carta => ({
       ...carta,
-      savedAt: carta.savedAt || 1,
       img: await comprimiImgPerCloud(carta.img)
     })));
-
     await setDoc(docRef, {
       carte: mazzoCloud,
-      deleted_shashes: merged,
+      deleted_shashes: _deletedShashes,
       aggiornato: new Date().toISOString()
     });
-
-  } catch (e) {
-    console.error('backupCloud ERRORE:', e);
-  }
+  } catch(e) { console.error('backupCloud ERRORE:', e); }
 };
 
   async function sincronizzaDaCloud() {
-    try {
-      if (!_currentUser) return;
+  if (!_currentUser) return;
+  try {
+    const snap = await getDoc(doc(db, 'users', _currentUser.uid, 'backup', 'mazzo'));
 
-      // --- carica tombstone locale ---
-      const savedDeleted = await localforage.getItem('deleted_shashes') || {};
-      _deletedShashes = savedDeleted;
-
-      // --- carica dati cloud ---
-      const docRef = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo');
-      const snap = await getDoc(docRef);
-      const cloudData = snap.exists() ? snap.data() : {};
-      const cloud = cloudData.carte || [];
-      const rawDeleted = cloudData.deleted_shashes || {};
-      const cloudDeleted = Array.isArray(rawDeleted)
-        ? Object.fromEntries(rawDeleted.map(s => [s, 0]))
-        : rawDeleted;
-
-      // --- unisci tombstone cloud + locale + pending ---
+    // Nessun backup cloud → carica locale sul cloud
+    if (!snap.exists()) {
+      const locale = await localforage.getItem('mazzo_custom') || [];
       const pending = await localforage.getItem('mazzo_pending_ops') || [];
-      const tuttiDeleted = { ...cloudDeleted, ..._deletedShashes };
-
-      for (const op of pending) {
-        if (op.op === 'delete' && op.shash) {
-          if (!tuttiDeleted[op.shash] || op.ts > tuttiDeleted[op.shash]) {
-            tuttiDeleted[op.shash] = op.ts;
-          }
-        }
-      }
-      _deletedShashes = tuttiDeleted;
-      await localforage.setItem('deleted_shashes', _deletedShashes);
-
-      // --- merge carte (cloud + locale) ---
-      const local = await localforage.getItem(CUSTOM_KEY) || [];
-      const mergedMap = new Map();
-
-      // aggiungi carte locali
-      local.forEach(c => {
-        mergedMap.set(c.shash, c);
-      });
-
-      // aggiungi carte cloud sovrascrivendo solo se savedAt più recente
-      cloud.forEach(c => {
-        const old = mergedMap.get(c.shash);
-        if (!old || (c.savedAt && (!old.savedAt || c.savedAt > old.savedAt))) {
-          mergedMap.set(c.shash, c);
-        }
-      });
-
-      // --- applica cancellazioni tombstone ---
-      for (const shash in tuttiDeleted) {
-        mergedMap.delete(shash);
-      }
-
-      const merged = Array.from(mergedMap.values());
-      await localforage.setItem(CUSTOM_KEY, merged);
-
-      // --- pulizia pending ---
-      const pendingFiltered = pending.filter(op => {
-        if (op.op !== 'delete' || !op.shash) return true;
-        return !(tuttiDeleted[op.shash] >= op.ts);
-      });
-      await localforage.setItem('mazzo_pending_ops', pendingFiltered);
-
-      // --- backup cloud finale ---
-      if (navigator.onLine) {
-        await window.backupCloud(merged, Object.keys(tuttiDeleted));
-      }
-
-    } catch (e) {
-      console.warn("Sync fallita:", e);
+      _deletedShashes = Object.fromEntries(
+        pending.filter(p => p.op === 'delete').map(p => [p.shash, p.ts || 0])
+      );
+      if (locale.length > 0) await window.backupCloud(locale);
+      await localforage.removeItem('mazzo_pending_ops');
+      return;
     }
-  }
+
+    // ── CLOUD È LA FONTE DI VERITÀ ──
+    // Le carte presenti nel cloud sono quelle che esistono.
+    // Se una carta è stata cancellata da un dispositivo, non è più nel cloud → non torna mai.
+    // I tombstone servono solo a bloccare le carte create offline (mai state sul cloud).
+
+    const cloud   = snap.data().carte || [];
+    const rawDeleted = snap.data().deleted_shashes || {};
+    const cloudDeleted = Array.isArray(rawDeleted)
+      ? Object.fromEntries(rawDeleted.map(s => [s, 0]))
+      : rawDeleted;
+    _deletedShashes = { ...cloudDeleted };
+
+    const locale  = await localforage.getItem('mazzo_custom') || [];
+    const pending = await localforage.getItem('mazzo_pending_ops') || [];
+
+    // Operazioni pending offline
+    const pendingDeleted = {};
+    pending.filter(p => p.op === 'delete').forEach(p => { pendingDeleted[p.shash] = p.ts || 0; });
+    const pendingUpdated = {};
+    pending.filter(p => p.op === 'update').forEach(p => { pendingUpdated[p.shash] = p; });
+
+    // Unisci tombstone cloud + pending offline
+    const tuttiDeleted = { ...cloudDeleted };
+    for (const [s, ts] of Object.entries(pendingDeleted)) {
+      if (tuttiDeleted[s] === undefined || ts > tuttiDeleted[s]) tuttiDeleted[s] = ts;
+    }
+    _deletedShashes = { ...tuttiDeleted };
+
+    // BASE: tutte le carte dal cloud, senza eccezioni
+    // (se non ci sono nel cloud, sono state cancellate → non si aggiungono)
+    let merged = cloud.map(c => {
+      if (pendingUpdated[c.shash]) {
+        const cartaLocale = locale.find(l => l.shash === pendingUpdated[c.shash].newShash);
+        return cartaLocale || c;
+      }
+      return c;
+    });
+
+    // SOLO LOCALI: carte create offline che non sono mai state sul cloud
+    // Vengono aggiunte solo se NON sono nei tombstone (cioè non sono state cancellate)
+    const cloudShash      = new Set(cloud.map(c => c.shash).filter(Boolean));
+    const replacedShashes = new Set(Object.values(pendingUpdated).map(p => p.newShash).filter(Boolean));
+    const soloLocali = locale.filter(c =>
+      c.shash &&
+      !cloudShash.has(c.shash) &&
+      !replacedShashes.has(c.shash) &&
+      !(c.shash in tuttiDeleted)   // se è nei tombstone, è stata cancellata → non aggiungere
+    );
+    merged = [...merged, ...soloLocali];
+
+    // Deduplicazione per sicurezza
+    const visti = new Map();
+    for (const c of merged) {
+      const key = c.shash || c.nome;
+      if (!visti.has(key)) visti.set(key, c);
+    }
+    merged = [...visti.values()];
+
+    // Scrivi locale, aggiorna UI, propaga tombstone offline sul cloud, svuota pending
+    await localforage.setItem('mazzo_custom', merged);
+    await window.aggiornaListaCustom();
+    await window.backupCloud(merged, Object.keys(pendingDeleted));
+    await localforage.removeItem('mazzo_pending_ops');
+
+    const msgs = [];
+    if (soloLocali.length)                       msgs.push(soloLocali.length + ' carte create offline caricate');
+    if (Object.keys(pendingDeleted).length)      msgs.push(Object.keys(pendingDeleted).length + ' cancellazioni offline applicate');
+    if (Object.keys(pendingUpdated).length)      msgs.push(Object.keys(pendingUpdated).length + ' modifiche offline applicate');
+    if (msgs.length) await customAlert('☁️ Sincronizzazione:\n' + msgs.join('\n'));
+
+  } catch(e) { console.error('sincronizzaDaCloud error:', e); }
+}
+
+
   // ── COMMUNITY ──
   window.apriCommunity = async () => {
     document.getElementById('communityOverlay').style.display = 'flex';
@@ -1138,6 +1137,7 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
       await localforage.setItem(CUSTOM_KEY, mazzoFinale);
       await aggiornaListaCustom();
       if (window._currentUser && navigator.onLine) {
+        if (window.backupCloud) await window.backupCloud(mazzoFinale);
         // Se la carta era condivisa in community, aggiorna anche lì
         if (communityId && window.condividiInCommunity) {
           await window.condividiInCommunity(carta);
@@ -1295,59 +1295,29 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
     const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
     const carta = mazzo[idx];
     if (!carta) return;
-
     const ok = await customConfirm({
       message: 'Eliminare la carta "' + (carta.testo || carta.nome) + '"?',
       okText: 'SI', cancelText: 'NO'
     });
     if (!ok) return;
-
-    // Rimuovi carta dal mazzo locale
     mazzo.splice(idx, 1);
     await localforage.setItem(CUSTOM_KEY, mazzo);
-
+    // Salva sempre il tombstone nel pending, online o offline
     if (carta.shash) {
-      const ts = Date.now();
-
-      // Aggiorna tombstone locale
-      const deleted = await localforage.getItem('deleted_shashes') || {};
-      deleted[carta.shash] = ts;
-      await localforage.setItem('deleted_shashes', deleted);
-      window._deletedShashes = deleted;
-
-      // Aggiorna pending log
       const pending = await localforage.getItem('mazzo_pending_ops') || [];
       const filtrato = pending.filter(p => p.shash !== carta.shash && p.newShash !== carta.shash);
-      filtrato.push({ op: 'delete', shash: carta.shash, ts });
+      filtrato.push({ op: 'delete', shash: carta.shash, ts: Date.now() });
       await localforage.setItem('mazzo_pending_ops', filtrato);
-
-      // Backup cloud per sincronizzare la cancellazione sugli altri dispositivi
-      if (window._currentUser && navigator.onLine && window.backupCloud) {
-        // Invio mazzo aggiornato e cancellazione
-        await window.backupCloud(mazzo, { delete: [carta.shash] });
-      }
     }
-
-    // Aggiorna l'interfaccia
     await aggiornaListaCustom();
+    if (window._currentUser && navigator.onLine) {
+      if (window.backupCloud) await window.backupCloud(mazzo, carta.shash ? [carta.shash] : []);
+    }
   }
 
   async function cancellaTuttoMazzo() {
     if (!await customConfirm({ message: 'Cancellare tutto il mazzo personalizzato?', okText: 'SI', cancelText: 'NO' })) return;
-
-    const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
-    const pending = await localforage.getItem('mazzo_pending_ops') || [];
-    const now = Date.now();
-
-    mazzo.forEach(c => {
-      if (c.shash) {
-        pending.push({ op: 'delete', shash: c.shash, ts: now });
-      }
-    });
-
-    await localforage.setItem('mazzo_pending_ops', pending);
     await localforage.removeItem(CUSTOM_KEY);
-
     await aggiornaListaCustom();
   }
 
