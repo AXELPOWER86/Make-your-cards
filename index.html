@@ -1363,20 +1363,34 @@ async function eliminaCarta(idx) {
     okText: 'SI', cancelText: 'NO'
   })) return;
 
-  // Rimuove dal mazzo
+  // Rimuove dal mazzo locale
   mazzo.splice(idx, 1);
   await localforage.setItem(CUSTOM_KEY, mazzo);
   await aggiornaListaCustom();
 
   // Aggiorna tombstones locali
+  const tombstones = await getTombstones();
   if (carta.shash) {
-    const tombstones = await getTombstones();
     tombstones[carta.shash] = Date.now();
     await setTombstones(tombstones);
   }
 
-  // Backup immediato sul cloud
-  await backupCloud(mazzo, carta.shash ? [carta.shash] : []);
+  // Funzione di backup e sincronizzazione cloud
+  const task = async () => {
+    // Backup sul cloud includendo i tombstones per cancellazioni
+    await backupCloud(mazzo, Object.keys(tombstones));
+    // Sincronizza mazzo e tombstones da cloud verso tutti i client
+    await sincronizzaDaCloud(false);
+  };
+
+  if (navigator.onLine) {
+    await task();
+  } else {
+    window.addEventListener('online', async function onOnline() {
+      window.removeEventListener('online', onOnline);
+      await task();
+    });
+  }
 }
 
 document.getElementById('btn-cancella-tutto').addEventListener('click', async () => {
