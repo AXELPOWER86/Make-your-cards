@@ -554,6 +554,7 @@ input[type="file"] { display: none; }
 
   let _currentUser = null;
   let _communityCards = [];
+  let _deletedShashes = []; // tombstone persistenti: shash cancellati, mai da reinserire
 
   onAuthStateChanged(auth, async user => {
     _currentUser = user;
@@ -609,23 +610,15 @@ window.loginGoogle = async () => {
 window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
   if (!_currentUser) return;
   try {
-    // Leggi i tombstone già sul cloud per non perderli
-    let cloudDeleted = [];
-    try {
-      const snap = await getDoc(doc(db, 'users', _currentUser.uid, 'backup', 'mazzo'));
-      if (snap.exists()) cloudDeleted = snap.data().deleted_shashes || [];
-    } catch(_) {}
-
-    // Unisci i tombstone esistenti con quelli nuovi (senza duplicati)
-    const mergedDeleted = [...new Set([...cloudDeleted, ...extraDeletedShashes])];
-
+    // Unisci i tombstone in memoria con eventuali nuovi prima di scrivere
+    _deletedShashes = [...new Set([..._deletedShashes, ...extraDeletedShashes])];
     const mazzoCloud = await Promise.all(mazzo.map(async carta => ({
       ...carta,
       img: await comprimiImgPerCloud(carta.img)
     })));
     await setDoc(doc(db, 'users', _currentUser.uid, 'backup', 'mazzo'), {
       carte: mazzoCloud,
-      deleted_shashes: mergedDeleted,
+      deleted_shashes: _deletedShashes,
       aggiornato: new Date().toISOString()
     });
   } catch(e) { console.error('backupCloud ERRORE:', e); }
@@ -639,14 +632,18 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
     // Nessun backup cloud → carica locale sul cloud
     if (!snap.exists()) {
       const locale = await localforage.getItem('mazzo_custom') || [];
+      const pending = await localforage.getItem('mazzo_pending_ops') || [];
+      _deletedShashes = pending.filter(p => p.op === 'delete').map(p => p.shash);
       if (locale.length > 0) await window.backupCloud(locale);
       await localforage.removeItem('mazzo_pending_ops');
       return;
     }
 
-    const cloud       = snap.data().carte || [];
+    const cloud        = snap.data().carte || [];
     // deleted_shashes: tombstone persistenti sul cloud (cancellazioni da qualsiasi dispositivo)
     const cloudDeleted = new Set(snap.data().deleted_shashes || []);
+    // Carica in memoria i tombstone cloud così tutti i backupCloud successivi li conservano
+    _deletedShashes = [...cloudDeleted];
     const locale      = await localforage.getItem('mazzo_custom') || [];
     const pending     = await localforage.getItem('mazzo_pending_ops') || [];
 
