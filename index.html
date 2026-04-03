@@ -639,8 +639,10 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
     }
 
     for (const s of extraDeletedShashes) {
-      if (merged[s] === undefined) {
-        merged[s] = now;
+      if (_deletedShashes[s] !== undefined) {
+        if (merged[s] === undefined || _deletedShashes[s] > merged[s]) {
+          merged[s] = _deletedShashes[s];
+        }
       }
     }
 
@@ -665,6 +667,8 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
 
   async function sincronizzaDaCloud() {
   try {
+    const savedDeleted = await localforage.getItem('deleted_shashes') || {};
+      _deletedShashes = savedDeleted;
     if (!_currentUser) return;
 
     const docRef = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo');
@@ -693,6 +697,7 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
     });
 
     _deletedShashes = tuttiDeleted;
+    await localforage.setItem('deleted_shashes', _deletedShashes);
 
     // --- MAPPE ---
     const cloudMap = new Map();
