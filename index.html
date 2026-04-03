@@ -554,7 +554,7 @@ input[type="file"] { display: none; }
 
   let _currentUser = null;
   let _communityCards = [];
-  let _deletedShashes = []; // tombstone persistenti: shash cancellati, mai da reinserire
+  let _deletedShashes = {}; // tombstone persistenti: { shash: timestampMs } — last-write-wins
   // Promise che si risolve quando la sincronizzazione iniziale è completata (o non necessaria)
   let _syncReady;
   let _syncReadyResolve;
@@ -617,12 +617,23 @@ window.loginGoogle = async () => {
 window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
   if (!_currentUser) return;
   try {
-    // Leggi prima i tombstone dal cloud per non sovrascriverli mai
     const docRef = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo');
     const snapCloud = await getDoc(docRef);
-    const cloudTombstones = snapCloud.exists() ? (snapCloud.data().deleted_shashes || []) : [];
-    // Unisci: cloud + memoria + nuovi (così i tombstone non vengono mai persi)
-    _deletedShashes = [...new Set([...cloudTombstones, ..._deletedShashes, ...extraDeletedShashes])];
+    // deleted_shashes è { shash: timestampMs } — compatibile anche con vecchio formato array
+    const rawCloud = snapCloud.exists() ? (snapCloud.data().deleted_shashes || {}) : {};
+    const cloudTombstones = Array.isArray(rawCloud)
+      ? Object.fromEntries(rawCloud.map(s => [s, 0]))
+      : rawCloud;
+    // Unisci cloud + memoria + nuovi: vince sempre il timestamp più alto
+    const now = Date.now();
+    const merged = { ...cloudTombstones };
+    for (const [s, ts] of Object.entries(_deletedShashes)) {
+      if (merged[s] === undefined || ts > merged[s]) merged[s] = ts;
+    }
+    for (const s of extraDeletedShashes) {
+      if (merged[s] === undefined) merged[s] = now;
+    }
+    _deletedShashes = merged;
     const mazzoCloud = await Promise.all(mazzo.map(async carta => ({
       ...carta,
       img: await comprimiImgPerCloud(carta.img)
@@ -644,38 +655,45 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
     if (!snap.exists()) {
       const locale = await localforage.getItem('mazzo_custom') || [];
       const pending = await localforage.getItem('mazzo_pending_ops') || [];
-      _deletedShashes = pending.filter(p => p.op === 'delete').map(p => p.shash);
+      _deletedShashes = Object.fromEntries(pending.filter(p => p.op === 'delete').map(p => [p.shash, p.ts || 0]));
       if (locale.length > 0) await window.backupCloud(locale);
       await localforage.removeItem('mazzo_pending_ops');
       return;
     }
 
-    const cloud        = snap.data().carte || [];
-    // deleted_shashes: tombstone persistenti sul cloud (cancellazioni da qualsiasi dispositivo)
-    const cloudDeleted = new Set(snap.data().deleted_shashes || []);
-    // Leggi anche tombstone dal documento dedicato (più affidabile)
-    try {
-      const tombSnap = await getDoc(doc(db, 'users', _currentUser.uid, 'backup', 'tombstones'));
-      if (tombSnap.exists()) {
-        (tombSnap.data().shashes || []).forEach(s => cloudDeleted.add(s));
-      }
-    } catch(_) {}
-    // Carica in memoria i tombstone cloud così tutti i backupCloud successivi li conservano
-    _deletedShashes = [...cloudDeleted];
+    const cloud      = snap.data().carte || [];
+    // deleted_shashes è { shash: timestampMs } — compatibile con vecchio formato array
+    const rawDeleted = snap.data().deleted_shashes || {};
+    const cloudDeleted = Array.isArray(rawDeleted)
+      ? Object.fromEntries(rawDeleted.map(s => [s, 0]))
+      : rawDeleted;
+    // Carica in memoria così backupCloud successivi conservano i tombstone
+    _deletedShashes = { ...cloudDeleted };
     const locale      = await localforage.getItem('mazzo_custom') || [];
     const pending     = await localforage.getItem('mazzo_pending_ops') || [];
 
-    // Tombstone offline (da dispositivo non loggato al momento della cancellazione)
-    const pendingDeleted = new Set(pending.filter(p => p.op === 'delete').map(p => p.shash));
+    // Tombstone offline: { shash → ts } da pending ops
+    const pendingDeleted = {};
+    pending.filter(p => p.op === 'delete').forEach(p => { pendingDeleted[p.shash] = p.ts || 0; });
     const pendingUpdated = {};
     pending.filter(p => p.op === 'update').forEach(p => { pendingUpdated[p.shash] = p; });
 
-    // Unione di tutti i tombstone: cloud + offline
-    const tuttiDeleted = new Set([...cloudDeleted, ...pendingDeleted]);
+    // Unione tombstone: vince sempre il timestamp più alto
+    const tuttiDeleted = { ...cloudDeleted };
+    for (const [s, ts] of Object.entries(pendingDeleted)) {
+      if (tuttiDeleted[s] === undefined || ts > tuttiDeleted[s]) tuttiDeleted[s] = ts;
+    }
+    _deletedShashes = { ...tuttiDeleted };
 
-    // Base: carte cloud che non sono state cancellate
+    // Base: carte cloud — sopravvive solo se NON in tuttiDeleted
+    // oppure se savedAt è più recente del tombstone (carta ricreata dopo cancellazione)
     let merged = cloud
-      .filter(c => !tuttiDeleted.has(c.shash))
+      .filter(c => {
+        if (!c.shash) return true;
+        const delTs = tuttiDeleted[c.shash];
+        if (delTs === undefined) return true;
+        return (c.savedAt || 0) > delTs;
+      })
       .map(c => {
         if (pendingUpdated[c.shash]) {
           const cartaLocale = locale.find(l => l.shash === pendingUpdated[c.shash].newShash);
@@ -685,14 +703,14 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
       });
 
     // Aggiungi carte solo locali: create offline, non cancellate, non già nel cloud
-    const cloudShash     = new Set(cloud.map(c => c.shash).filter(Boolean));
+    const cloudShash      = new Set(cloud.map(c => c.shash).filter(Boolean));
     const replacedShashes = new Set(Object.values(pendingUpdated).map(p => p.newShash).filter(Boolean));
-    const soloLocali = locale.filter(c =>
-      c.shash &&
-      !cloudShash.has(c.shash) &&
-      !tuttiDeleted.has(c.shash) &&
-      !replacedShashes.has(c.shash)
-    );
+    const soloLocali = locale.filter(c => {
+      if (!c.shash || cloudShash.has(c.shash) || replacedShashes.has(c.shash)) return false;
+      const delTs = tuttiDeleted[c.shash];
+      if (delTs === undefined) return true;
+      return (c.savedAt || 0) > delTs;
+    });
     merged = [...merged, ...soloLocali];
 
     // Deduplicazione finale: in caso di shash doppi (es. merge da più dispositivi simultanei)
@@ -715,12 +733,12 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
     // Scrivi locale, poi cloud con tombstone aggiornati, poi svuota pending
     await localforage.setItem('mazzo_custom', merged);
     await window.aggiornaListaCustom();
-    await window.backupCloud(merged, [...pendingDeleted]); // propaga tombstone offline sul cloud
+    await window.backupCloud(merged, Object.keys(pendingDeleted)); // propaga tombstone offline sul cloud
     await localforage.removeItem('mazzo_pending_ops');
 
     const msgs = [];
     if (soloLocali.length)                       msgs.push(soloLocali.length + ' carte create offline caricate');
-    if (pendingDeleted.size)                     msgs.push(pendingDeleted.size + ' cancellazioni offline applicate');
+    if (Object.keys(pendingDeleted).length)      msgs.push(Object.keys(pendingDeleted).length + ' cancellazioni offline applicate');
     if (Object.keys(pendingUpdated).length)      msgs.push(Object.keys(pendingUpdated).length + ' modifiche offline applicate');
     if (msgs.length) await customAlert('☁️ Sincronizzazione:\n' + msgs.join('\n'));
 
@@ -1122,7 +1140,7 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
       const nome = cartaInModifica ? cartaInModifica.nome : 'carta_custom_' + shash.slice(0, 8) + '.png';
       // Preserva il communityId se si sta modificando una carta già condivisa
       const communityId = cartaInModifica ? (cartaInModifica.communityId || null) : null;
-      const carta = { hash: null, phash: null, shash, lphash256: null, img: injectedDataUrl, nome, originale: nome, estratta: false, testo, communityId };
+      const carta = { hash: null, phash: null, shash, lphash256: null, img: injectedDataUrl, nome, originale: nome, estratta: false, testo, communityId, savedAt: Date.now() };
       const mazzoFinale = esistente.filter(c => !c._inModifica);
       mazzoFinale.push(carta);
       await localforage.setItem(CUSTOM_KEY, mazzoFinale);
@@ -1302,16 +1320,6 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
     }
     await aggiornaListaCustom();
     if (_currentUser && navigator.onLine) {
-      // Scrivi tombstone su documento dedicato (atomico, non sovrascrivibile da backupCloud)
-      if (carta.shash) {
-        try {
-          const tombRef = doc(db, 'users', _currentUser.uid, 'backup', 'tombstones');
-          const tombSnap = await getDoc(tombRef);
-          const existing = tombSnap.exists() ? (tombSnap.data().shashes || []) : [];
-          const updated = [...new Set([...existing, carta.shash])];
-          await setDoc(tombRef, { shashes: updated, aggiornato: new Date().toISOString() });
-        } catch(e) { console.error('tombstone write error:', e); }
-      }
       if (window.backupCloud) await window.backupCloud(mazzo, carta.shash ? [carta.shash] : []);
     }
   }
