@@ -1363,24 +1363,32 @@ async function eliminaCarta(idx) {
     okText: 'SI', cancelText: 'NO'
   })) return;
 
-  // Rimuove dal mazzo locale
+  // Rimuove la carta dal mazzo locale
   mazzo.splice(idx, 1);
   await localforage.setItem(CUSTOM_KEY, mazzo);
   await aggiornaListaCustom();
 
-  // Aggiorna tombstones locali
+  // Aggiorna i tombstones locali
   const tombstones = await getTombstones();
   if (carta.shash) {
     tombstones[carta.shash] = Date.now();
     await setTombstones(tombstones);
   }
 
-  // Funzione di backup e sincronizzazione cloud
+  // Funzione di backup + sincronizzazione cloud
   const task = async () => {
-    // Backup sul cloud includendo i tombstones per cancellazioni
+    // Invia tutto il mazzo e TUTTI i tombstones al cloud
     await backupCloud(mazzo, Object.keys(tombstones));
-    // Sincronizza mazzo e tombstones da cloud verso tutti i client
-    await sincronizzaDaCloud(true);
+
+    // Sincronizza dal cloud forzando l'aggiornamento del mazzo locale filtrando le carte cancellate
+    const cloudData = await sincronizzaDaCloud(true);
+    const mazzoCloud = cloudData.mazzo || [];
+    const tombstonesCloud = cloudData.tombstones || {};
+
+    // Filtra le carte fantasma usando i tombstones cloud
+    const mazzoFiltrato = mazzoCloud.filter(c => !tombstonesCloud[c.shash]);
+    await localforage.setItem(CUSTOM_KEY, mazzoFiltrato);
+    await aggiornaListaCustom();
   };
 
   if (navigator.onLine) {
