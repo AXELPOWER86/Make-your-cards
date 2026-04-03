@@ -554,8 +554,7 @@ input[type="file"] { display: none; }
 
   let _currentUser = null;
   let _communityCards = [];
-  // { shash → timestampMs }: tombstone delle carte cancellate, persistono su cloud e pending
-  let _deletedShashes = {};
+  let _deletedShashes = {}; // { shash → timestampMs }: tombstone delle carte cancellate
   let _syncReady;
   let _syncReadyResolve;
   _syncReady = new Promise(r => { _syncReadyResolve = r; });
@@ -581,7 +580,7 @@ input[type="file"] { display: none; }
       btnLogin.style.display  = 'inline-block';
       btnLogout.style.display = 'none';
       btnCom.style.display    = 'none';
-      _syncReadyResolve();
+      _syncReadyResolve(); // nessun sync necessario, sblocca subito
     }
   });
 
@@ -617,18 +616,14 @@ window.loginGoogle = async () => {
   });
 }
 window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
-  // Scrive mazzo + tombstone sul cloud.
-  // Legge sempre i tombstone cloud prima di scrivere per non perderli mai.
   if (!_currentUser) return;
   try {
     const docRef = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo');
     const snap = await getDoc(docRef);
     const rawCloud = snap.exists() ? (snap.data().deleted_shashes || {}) : {};
-    // Compatibilità con vecchio formato array
     const cloudTombstones = Array.isArray(rawCloud)
       ? Object.fromEntries(rawCloud.map(s => [s, Date.now()]))
       : rawCloud;
-    // Merge tombstone: cloud + memoria + nuovi extra — vince il ts più alto
     const now = Date.now();
     const tombstones = { ...cloudTombstones };
     for (const [s, ts] of Object.entries(_deletedShashes)) {
@@ -638,7 +633,6 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
       if (!tombstones[s]) tombstones[s] = now;
     }
     _deletedShashes = tombstones;
-    // Comprimi immagini per cloud
     const mazzoCloud = await Promise.all(mazzo.map(async c => ({
       ...c, img: await comprimiImgPerCloud(c.img)
     })));
@@ -651,24 +645,17 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
 };
 
   async function sincronizzaDaCloud() {
-  // ── LOGICA SYNC ──
-  // 1. Cloud è fonte di verità per le carte esistenti.
-  //    Se una carta è stata cancellata da qualsiasi dispositivo, non è più nel cloud
-  //    → nessun altro dispositivo la può reintrodurre.
-  // 2. Tombstone { shash → ts } bloccano solo le carte create offline (mai state sul cloud).
-  // 3. Pending ops offline vengono propagati al cloud al primo sync online.
-  // 4. Merge: cloud + sole carte locali mai sincronizzate prima, escludendo i tombstone.
+  // LOGICA: cloud = fonte di verità assoluta per carte esistenti.
+  // I tombstone bloccano solo le carte create offline mai sincronizzate.
   if (!_currentUser) return;
   try {
     const docRef = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo');
     const snap = await getDoc(docRef);
 
-    // ── CASO A: nessun backup cloud ──
-    // Primo login: carica il localforage sul cloud
+    // ── CASO A: nessun backup cloud → primo login, carica locale sul cloud ──
     if (!snap.exists()) {
       const locale  = await localforage.getItem('mazzo_custom') || [];
       const pending = await localforage.getItem('mazzo_pending_ops') || [];
-      // Carica tombstone pending in memoria
       _deletedShashes = Object.fromEntries(
         pending.filter(p => p.op === 'delete').map(p => [p.shash, p.ts || Date.now()])
       );
@@ -678,22 +665,19 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
     }
 
     // ── CASO B: backup cloud esiste ──
-    const cloudData    = snap.data();
-    const cloudCarte   = cloudData.carte || [];
-    const cloudAggiornato = cloudData.aggiornato || 0;
+    const cloudData  = snap.data();
+    const cloudCarte = cloudData.carte || [];
 
-    // Carica tombstone cloud in memoria (con compat vecchio formato array)
+    // Carica tombstone cloud (compat vecchio formato array)
     const rawDeleted = cloudData.deleted_shashes || {};
     const cloudDeleted = Array.isArray(rawDeleted)
       ? Object.fromEntries(rawDeleted.map(s => [s, Date.now()]))
       : rawDeleted;
     _deletedShashes = { ...cloudDeleted };
 
-    // Leggi stato locale e pending ops
     const locale  = await localforage.getItem('mazzo_custom') || [];
     const pending = await localforage.getItem('mazzo_pending_ops') || [];
 
-    // Estrai pending ops
     const pendingDeleted = {};
     pending.filter(p => p.op === 'delete').forEach(p => { pendingDeleted[p.shash] = p.ts || Date.now(); });
     const pendingUpdated = {};
@@ -706,9 +690,7 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
     }
     _deletedShashes = { ...tuttiDeleted };
 
-    // ── BASE: tutte le carte dal cloud ──
-    // Il cloud NON contiene più le carte cancellate (backupCloud le scrive senza).
-    // Applica eventuali modifiche pending locali (es. testo aggiornato offline).
+    // BASE: tutte le carte dal cloud, con eventuali modifiche pending applicate
     let merged = cloudCarte.map(c => {
       if (c.shash && pendingUpdated[c.shash]) {
         const aggiornata = locale.find(l => l.shash === pendingUpdated[c.shash].newShash);
@@ -717,11 +699,7 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
       return c;
     });
 
-    // ── SOLO LOCALI: carte create offline che non sono mai state sul cloud ──
-    // Condizioni per aggiungerle:
-    // - hanno uno shash (carte senza shash non vengono tracciate)
-    // - NON sono già nel cloud (sarebbero già in merged)
-    // - NON sono nei tombstone (sono state cancellate, non reintrodurre)
+    // SOLO LOCALI: carte create offline mai state sul cloud, non cancellate
     const cloudShashes    = new Set(cloudCarte.map(c => c.shash).filter(Boolean));
     const replacedShashes = new Set(Object.values(pendingUpdated).map(p => p.newShash).filter(Boolean));
     const soloLocali = locale.filter(c =>
@@ -732,29 +710,23 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
     );
     merged = [...merged, ...soloLocali];
 
-    // Deduplicazione per shash (non dovrebbe servire, ma per sicurezza)
+    // Deduplicazione per sicurezza
     const visti = new Map();
     for (const c of merged) {
       if (!visti.has(c.shash || c.nome)) visti.set(c.shash || c.nome, c);
     }
     merged = [...visti.values()];
 
-    // Scrivi localforage con il mazzo sincronizzato
     await localforage.setItem('mazzo_custom', merged);
     await window.aggiornaListaCustom();
-
-    // Propaga al cloud: mazzo merged + tombstone (inclusi quelli offline)
     await window.backupCloud(merged, Object.keys(pendingDeleted));
     await localforage.removeItem('mazzo_pending_ops');
 
-    // Notifica operazioni offline applicate
     const msgs = [];
-    if (soloLocali.length)                       msgs.push(soloLocali.length + ' carte create offline caricate');
-    if (Object.keys(pendingDeleted).length)      msgs.push(Object.keys(pendingDeleted).length + ' cancellazioni offline applicate');
-    if (Object.keys(pendingUpdated).length)      msgs.push(Object.keys(pendingUpdated).length + ' modifiche offline applicate');
-    if (msgs.length) await customAlert('☁️ Sincronizzazione:
-' + msgs.join('
-'));
+    if (soloLocali.length)                  msgs.push(soloLocali.length + ' carte create offline caricate');
+    if (Object.keys(pendingDeleted).length) msgs.push(Object.keys(pendingDeleted).length + ' cancellazioni offline applicate');
+    if (Object.keys(pendingUpdated).length) msgs.push(Object.keys(pendingUpdated).length + ' modifiche offline applicate');
+    if (msgs.length) await customAlert('☁️ Sincronizzazione:\n' + msgs.join('\n'));
 
   } catch(e) { console.error('sincronizzaDaCloud error:', e); }
 }
@@ -1160,14 +1132,13 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
       await localforage.setItem(CUSTOM_KEY, mazzoFinale);
       await aggiornaListaCustom();
       if (window._currentUser && navigator.onLine) {
-        // Online: backup immediato
         if (window.backupCloud) await window.backupCloud(mazzoFinale);
         // Se la carta era condivisa in community, aggiorna anche lì
         if (communityId && window.condividiInCommunity) {
           await window.condividiInCommunity(carta);
         }
       } else if (cartaInModifica && cartaInModifica.shash) {
-        // Offline: registra la modifica nel pending, verrà propagata al ritorno online
+        // Offline o non loggato: registra la modifica nel log pending
         const pending = await localforage.getItem('mazzo_pending_ops') || [];
         const filtrato = pending.filter(p => p.shash !== cartaInModifica.shash && p.newShash !== cartaInModifica.shash);
         filtrato.push({ op: 'update', shash: cartaInModifica.shash, newShash: shash, ts: Date.now() });
@@ -1326,17 +1297,15 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
     if (!ok) return;
     mazzo.splice(idx, 1);
     await localforage.setItem(CUSTOM_KEY, mazzo);
+    // Salva sempre il tombstone nel pending, online o offline
     await aggiornaListaCustom();
     if (carta.shash) {
-      const ts = Date.now();
       if (window._currentUser && navigator.onLine) {
-        // Online: backup immediato con tombstone → propagato subito a tutti i dispositivi
         if (window.backupCloud) await window.backupCloud(mazzo, [carta.shash]);
       } else {
-        // Offline: salva tombstone nel pending, verrà propagato al ritorno online
         const pending = await localforage.getItem('mazzo_pending_ops') || [];
         const filtrato = pending.filter(p => p.shash !== carta.shash && p.newShash !== carta.shash);
-        filtrato.push({ op: 'delete', shash: carta.shash, ts });
+        filtrato.push({ op: 'delete', shash: carta.shash, ts: Date.now() });
         await localforage.setItem('mazzo_pending_ops', filtrato);
       }
     }
@@ -1345,17 +1314,14 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
   async function cancellaTuttoMazzo() {
     if (!await customConfirm({ message: 'Cancellare tutto il mazzo personalizzato?', okText: 'SI', cancelText: 'NO' })) return;
     const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
-    // Registra tombstone per tutte le carte con shash
-    const ts = Date.now();
     const shashes = mazzo.map(c => c.shash).filter(Boolean);
+    const ts = Date.now();
     await localforage.removeItem(CUSTOM_KEY);
     await aggiornaListaCustom();
     if (shashes.length) {
       if (window._currentUser && navigator.onLine) {
-        // Online: backup immediato con mazzo vuoto e tutti i tombstone
         if (window.backupCloud) await window.backupCloud([], shashes);
       } else {
-        // Offline: salva tombstone nel pending
         const pending = await localforage.getItem('mazzo_pending_ops') || [];
         const filtrato = pending.filter(p => !shashes.includes(p.shash) && !shashes.includes(p.newShash));
         shashes.forEach(s => filtrato.push({ op: 'delete', shash: s, ts }));
@@ -1413,10 +1379,9 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
   window.aggiornaListaCustom = aggiornaListaCustom;
   window.addEventListener('resize', () => document.fonts.ready.then(() => autoFit()));
 
-  // ── Listener online: appena torna la connessione, sincronizza pending ops ──
+  // Appena torna la connessione, sincronizza le pending ops
   window.addEventListener('online', async () => {
     if (window._currentUser) {
-      console.log('Connessione ripristinata — sync pending ops');
       await sincronizzaDaCloud();
     }
   });
