@@ -554,20 +554,18 @@ input[type="file"] { display: none; }
 
   let _currentUser = null;
   let _communityCards = [];
-  let _deletedShashes = {}; // { shash → timestampMs }: tombstone delle carte cancellate
-  let _syncReady;
   let _syncReadyResolve;
-  _syncReady = new Promise(r => { _syncReadyResolve = r; });
+  const _syncReady = new Promise(r => { _syncReadyResolve = r; });
   window._syncReady = _syncReady;
-  window._currentUser = null; // esposto globalmente per gli script non-module
+  window._currentUser = null;
 
   onAuthStateChanged(auth, async user => {
     _currentUser = user;
     window._currentUser = user;
-    const loginInfo  = document.getElementById('login-info');
-    const btnLogin   = document.getElementById('btn-login');
-    const btnLogout  = document.getElementById('btn-logout');
-    const btnCom     = document.getElementById('btn-community');
+    const loginInfo = document.getElementById('login-info');
+    const btnLogin  = document.getElementById('btn-login');
+    const btnLogout = document.getElementById('btn-logout');
+    const btnCom    = document.getElementById('btn-community');
     if (user) {
       loginInfo.innerHTML = (user.photoURL ? `<img src="${user.photoURL}" alt="">` : '') + ' ' + (user.displayName || user.email);
       btnLogin.style.display  = 'none';
@@ -580,20 +578,20 @@ input[type="file"] { display: none; }
       btnLogin.style.display  = 'inline-block';
       btnLogout.style.display = 'none';
       btnCom.style.display    = 'none';
-      _syncReadyResolve(); // nessun sync necessario, sblocca subito
+      _syncReadyResolve();
     }
   });
 
-window.loginGoogle = async () => {
-  try {
-    const provider = new GoogleAuthProvider();
-    await signInWithPopup(auth, provider);
-  } catch(e) {
-    if (e.code !== 'auth/popup-closed-by-user') {
-      await customAlert('Errore login:\n' + e.message);
+  window.loginGoogle = async () => {
+    try {
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
+    } catch(e) {
+      if (e.code !== 'auth/popup-closed-by-user') {
+        await customAlert('Errore login:\n' + e.message);
+      }
     }
-  }
-};
+  };
 
   window.logoutGoogle = async () => {
     if (!await customConfirm({ message: 'Disconnettersi da Google?', okText: 'SI', cancelText: 'NO' })) return;
@@ -601,136 +599,71 @@ window.loginGoogle = async () => {
   };
 
   async function comprimiImgPerCloud(dataUrl) {
-  return new Promise(resolve => {
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      const MAX = 400;
-      const ratio = Math.min(MAX / img.width, MAX / img.height, 1);
-      canvas.width  = Math.round(img.width  * ratio);
-      canvas.height = Math.round(img.height * ratio);
-      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-      resolve(canvas.toDataURL('image/jpeg', 0.7));
-    };
-    img.src = dataUrl;
-  });
-}
-window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
-  if (!_currentUser) return;
-  try {
-    const docRef = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo');
-    const snap = await getDoc(docRef);
-    const rawCloud = snap.exists() ? (snap.data().deleted_shashes || {}) : {};
-    const cloudTombstones = Array.isArray(rawCloud)
-      ? Object.fromEntries(rawCloud.map(s => [s, Date.now()]))
-      : rawCloud;
-    const now = Date.now();
-    const tombstones = { ...cloudTombstones };
-    for (const [s, ts] of Object.entries(_deletedShashes)) {
-      if (!tombstones[s] || ts > tombstones[s]) tombstones[s] = ts;
-    }
-    for (const s of extraDeletedShashes) {
-      if (!tombstones[s]) tombstones[s] = now;
-    }
-    _deletedShashes = tombstones;
-    const mazzoCloud = await Promise.all(mazzo.map(async c => ({
-      ...c, img: await comprimiImgPerCloud(c.img)
-    })));
-    await setDoc(docRef, {
-      carte: mazzoCloud,
-      deleted_shashes: _deletedShashes,
-      aggiornato: now
+    return new Promise(resolve => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX = 400;
+        const ratio = Math.min(MAX / img.width, MAX / img.height, 1);
+        canvas.width  = Math.round(img.width  * ratio);
+        canvas.height = Math.round(img.height * ratio);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', 0.7));
+      };
+      img.src = dataUrl;
     });
-  } catch(e) { console.error('backupCloud ERRORE:', e); }
-};
+  }
+
+  // Cloud = fonte di verità assoluta.
+  // backupCloud sovrascrive SEMPRE il cloud con lo stato locale attuale.
+  window.backupCloud = async (mazzo) => {
+    if (!_currentUser) return;
+    try {
+      const mazzoCloud = await Promise.all(mazzo.map(async carta => ({
+        ...carta,
+        img: await comprimiImgPerCloud(carta.img)
+      })));
+      await setDoc(doc(db, 'users', _currentUser.uid, 'backup', 'mazzo'), {
+        carte: mazzoCloud,
+        aggiornato: Date.now()
+      });
+    } catch(e) { console.error('backupCloud ERRORE:', e); }
+  };
 
   async function sincronizzaDaCloud() {
-  // LOGICA: cloud = fonte di verità assoluta per carte esistenti.
-  // I tombstone bloccano solo le carte create offline mai sincronizzate.
-  if (!_currentUser) return;
-  try {
-    const docRef = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo');
-    const snap = await getDoc(docRef);
+    if (!_currentUser) return;
+    try {
+      const snap = await getDoc(doc(db, 'users', _currentUser.uid, 'backup', 'mazzo'));
 
-    // ── CASO A: nessun backup cloud → primo login, carica locale sul cloud ──
-    if (!snap.exists()) {
-      const locale  = await localforage.getItem('mazzo_custom') || [];
-      const pending = await localforage.getItem('mazzo_pending_ops') || [];
-      _deletedShashes = Object.fromEntries(
-        pending.filter(p => p.op === 'delete').map(p => [p.shash, p.ts || Date.now()])
-      );
-      if (locale.length > 0) await window.backupCloud(locale);
-      await localforage.removeItem('mazzo_pending_ops');
-      return;
-    }
-
-    // ── CASO B: backup cloud esiste ──
-    const cloudData  = snap.data();
-    const cloudCarte = cloudData.carte || [];
-
-    // Carica tombstone cloud (compat vecchio formato array)
-    const rawDeleted = cloudData.deleted_shashes || {};
-    const cloudDeleted = Array.isArray(rawDeleted)
-      ? Object.fromEntries(rawDeleted.map(s => [s, Date.now()]))
-      : rawDeleted;
-    _deletedShashes = { ...cloudDeleted };
-
-    const locale  = await localforage.getItem('mazzo_custom') || [];
-    const pending = await localforage.getItem('mazzo_pending_ops') || [];
-
-    const pendingDeleted = {};
-    pending.filter(p => p.op === 'delete').forEach(p => { pendingDeleted[p.shash] = p.ts || Date.now(); });
-    const pendingUpdated = {};
-    pending.filter(p => p.op === 'update').forEach(p => { pendingUpdated[p.shash] = p; });
-
-    // Merge tombstone: cloud + pending offline
-    const tuttiDeleted = { ...cloudDeleted };
-    for (const [s, ts] of Object.entries(pendingDeleted)) {
-      if (!tuttiDeleted[s] || ts > tuttiDeleted[s]) tuttiDeleted[s] = ts;
-    }
-    _deletedShashes = { ...tuttiDeleted };
-
-    // BASE: tutte le carte dal cloud, con eventuali modifiche pending applicate
-    let merged = cloudCarte.map(c => {
-      if (c.shash && pendingUpdated[c.shash]) {
-        const aggiornata = locale.find(l => l.shash === pendingUpdated[c.shash].newShash);
-        return aggiornata || c;
+      // Nessun backup cloud: primo login, carica locale sul cloud
+      if (!snap.exists()) {
+        const locale = await localforage.getItem('mazzo_custom') || [];
+        if (locale.length > 0) await window.backupCloud(locale);
+        return;
       }
-      return c;
-    });
 
-    // SOLO LOCALI: carte create offline mai state sul cloud, non cancellate
-    const cloudShashes    = new Set(cloudCarte.map(c => c.shash).filter(Boolean));
-    const replacedShashes = new Set(Object.values(pendingUpdated).map(p => p.newShash).filter(Boolean));
-    const soloLocali = locale.filter(c =>
-      c.shash &&
-      !cloudShashes.has(c.shash) &&
-      !replacedShashes.has(c.shash) &&
-      !(c.shash in tuttiDeleted)
-    );
-    merged = [...merged, ...soloLocali];
+      const cloud  = snap.data().carte || [];
+      const locale = await localforage.getItem('mazzo_custom') || [];
 
-    // Deduplicazione per sicurezza
-    const visti = new Map();
-    for (const c of merged) {
-      if (!visti.has(c.shash || c.nome)) visti.set(c.shash || c.nome, c);
-    }
-    merged = [...visti.values()];
+      // Cloud è fonte di verità. Aggiunge solo carte locali mai sincronizzate.
+      const cloudShashes = new Set(cloud.map(c => c.shash).filter(Boolean));
+      const soloLocali   = locale.filter(c => c.shash && !cloudShashes.has(c.shash));
+      const merged       = [...cloud, ...soloLocali];
 
-    await localforage.setItem('mazzo_custom', merged);
-    await window.aggiornaListaCustom();
-    await window.backupCloud(merged, Object.keys(pendingDeleted));
-    await localforage.removeItem('mazzo_pending_ops');
+      await localforage.setItem('mazzo_custom', merged);
+      await window.aggiornaListaCustom();
 
-    const msgs = [];
-    if (soloLocali.length)                  msgs.push(soloLocali.length + ' carte create offline caricate');
-    if (Object.keys(pendingDeleted).length) msgs.push(Object.keys(pendingDeleted).length + ' cancellazioni offline applicate');
-    if (Object.keys(pendingUpdated).length) msgs.push(Object.keys(pendingUpdated).length + ' modifiche offline applicate');
-    if (msgs.length) await customAlert('☁️ Sincronizzazione:\n' + msgs.join('\n'));
+      if (soloLocali.length > 0) {
+        await window.backupCloud(merged);
+        await customAlert('☁️ Sincronizzazione:\n' + soloLocali.length + ' carte locali caricate sul cloud.');
+      }
+    } catch(e) { console.error('sincronizzaDaCloud error:', e); }
+  }
 
-  } catch(e) { console.error('sincronizzaDaCloud error:', e); }
-}
-
+  // Sync quando torna online
+  window.addEventListener('online', async () => {
+    if (window._currentUser) await sincronizzaDaCloud();
+  });
 
   // ── COMMUNITY ──
   window.apriCommunity = async () => {
@@ -830,9 +763,7 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
       c.shash === carta.shash ||
       (testoNorm && (c.testo || '').toUpperCase().trim() === testoNorm)
     );
-    if (duplicata) {
-      await customAlert('Questa carta è già nel tuo mazzo.'); return;
-    }
+    if (duplicata) { await customAlert('Questa carta è già nel tuo mazzo.'); return; }
     esistente.push({ ...carta, estratta: false, _inModifica: false });
     await localforage.setItem('mazzo_custom', esistente);
     await window.aggiornaListaCustom();
@@ -856,14 +787,13 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
     if (!await customConfirm({ message: 'Eliminare questa carta dalla community?', okText: 'SI', cancelText: 'NO' })) return;
     try {
       await deleteDoc(doc(db, 'community', id));
-      // Rimuovi anche il communityId dalle carte locali che puntavano a questo doc
       const mazzo = await localforage.getItem('mazzo_custom') || [];
       let aggiornato = false;
       mazzo.forEach(c => { if (c.communityId === id) { c.communityId = null; aggiornato = true; } });
       if (aggiornato) {
         await localforage.setItem('mazzo_custom', mazzo);
-        if (window.backupCloud) await window.backupCloud(mazzo);
-        if (window.aggiornaListaCustom) await window.aggiornaListaCustom();
+        await window.backupCloud(mazzo);
+        await window.aggiornaListaCustom();
       }
       _communityCards = _communityCards.filter(c => c.id !== id);
       renderCommunity(_communityCards);
@@ -875,7 +805,7 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
     try {
       const imgCloud = await comprimiImgPerCloud(carta.img);
 
-      // ── UPDATE: carta già condivisa in precedenza ──
+      // UPDATE: carta già condivisa
       if (carta.communityId) {
         await updateDoc(doc(db, 'community', carta.communityId), {
           testo: carta.testo || '',
@@ -884,15 +814,12 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
           updatedAt: new Date().toISOString()
         });
         const idx = _communityCards.findIndex(c => c.id === carta.communityId);
-        if (idx !== -1) {
-          _communityCards[idx].testo = carta.testo;
-          _communityCards[idx].img = imgCloud;
-        }
+        if (idx !== -1) { _communityCards[idx].testo = carta.testo; _communityCards[idx].img = imgCloud; }
         await customAlert('Carta aggiornata nella community! ✏️');
         return;
       }
 
-      // ── CREATE: prima condivisione ──
+      // CREATE: prima condivisione
       if (_communityCards.some(c => c.shash === carta.shash)) {
         await customAlert('Questa carta è già presente nella community.'); return;
       }
@@ -907,16 +834,15 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
         data: new Date().toISOString()
       });
 
-      // Salva communityId nel mazzo locale per i futuri update
+      // Salva communityId nel mazzo locale
       const mazzo = await localforage.getItem('mazzo_custom') || [];
       const cartaLocale = mazzo.find(c => c.shash === carta.shash);
       if (cartaLocale) {
         cartaLocale.communityId = ref.id;
         carta.communityId = ref.id;
         await localforage.setItem('mazzo_custom', mazzo);
-        if (window.backupCloud) await window.backupCloud(mazzo);
+        await window.backupCloud(mazzo);
       }
-
       await customAlert('Carta condivisa con la community! 🎉');
     } catch(e) { await customAlert('Errore condivisione:\n' + e.message); }
   };
@@ -1118,32 +1044,36 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
       const rawBuf = await (await fetch(dataUrl)).arrayBuffer();
       const pngBuf = injectPngTextChunk(rawBuf, 'porky_shash', shash);
       const injectedDataUrl = 'data:image/png;base64,' + arrayBufferToBase64(pngBuf);
+
       const esistente = await localforage.getItem(CUSTOM_KEY) || [];
       if (esistente.some(c => c.shash === shash && !c._inModifica)) {
         await customAlert('Questa carta è già nel mazzo personalizzato.'); return;
       }
+
       const cartaInModifica = esistente.find(c => c._inModifica);
       const nome = cartaInModifica ? cartaInModifica.nome : 'carta_custom_' + shash.slice(0, 8) + '.png';
-      // Preserva il communityId se si sta modificando una carta già condivisa
+      // Preserva communityId se la carta era già condivisa
       const communityId = cartaInModifica ? (cartaInModifica.communityId || null) : null;
-      const carta = { hash: null, phash: null, shash, lphash256: null, img: injectedDataUrl, nome, originale: nome, estratta: false, testo, communityId, savedAt: Date.now() };
+
+      const carta = {
+        hash: null, phash: null, shash, lphash256: null,
+        img: injectedDataUrl, nome, originale: nome,
+        estratta: false, testo, communityId, savedAt: Date.now()
+      };
+
       const mazzoFinale = esistente.filter(c => !c._inModifica);
       mazzoFinale.push(carta);
       await localforage.setItem(CUSTOM_KEY, mazzoFinale);
       await aggiornaListaCustom();
-      if (window._currentUser && navigator.onLine) {
-        if (window.backupCloud) await window.backupCloud(mazzoFinale);
-        // Se la carta era condivisa in community, aggiorna anche lì
-        if (communityId && window.condividiInCommunity) {
-          await window.condividiInCommunity(carta);
-        }
-      } else if (cartaInModifica && cartaInModifica.shash) {
-        // Offline o non loggato: registra la modifica nel log pending
-        const pending = await localforage.getItem('mazzo_pending_ops') || [];
-        const filtrato = pending.filter(p => p.shash !== cartaInModifica.shash && p.newShash !== cartaInModifica.shash);
-        filtrato.push({ op: 'update', shash: cartaInModifica.shash, newShash: shash, ts: Date.now() });
-        await localforage.setItem('mazzo_pending_ops', filtrato);
+
+      // Backup cloud
+      if (window.backupCloud) await window.backupCloud(mazzoFinale);
+
+      // Se la carta era condivisa in community, aggiorna automaticamente anche lì
+      if (communityId && window.condividiInCommunity) {
+        await window.condividiInCommunity(carta);
       }
+
       document.getElementById('preview-share-wrap').style.display = 'none';
       resetAll();
     } catch(e) {
