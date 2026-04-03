@@ -1213,8 +1213,13 @@ document.getElementById('btn-salva').addEventListener('click', async () => {
 
     await localforage.setItem(CUSTOM_KEY, mazzoFinale);
     await aggiornaListaCustom();
+
+    // Aggiorna tombstones se c’era vecchio shash
+    const tombstones = vecchioShash ? { [vecchioShash]: Date.now() } : {};
     await backupCloud(mazzoFinale, vecchioShash ? [vecchioShash] : []);
-    await new Promise(r => setTimeout(r, 300));
+
+    // Forza la sincronizzazione subito dopo il backup, così la carta arriva anche sugli altri dispositivi
+    await sincronizzaDaCloud(true);
 
     // Se la carta era condivisa in community, aggiorna automaticamente anche lì
     if (communityId) await condividiInCommunity(carta);
