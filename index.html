@@ -645,8 +645,6 @@ let _syncInterval = null;
 // ── Merge cloud corretto (sincronizzaDaCloud) ──
 async function sincronizzaDaCloud(silenzioso = false) {
   if (!_currentUser) return;
-  if (_syncLock) return; // evita esecuzioni parallele
-  _syncLock = true;
   try {
     const ref  = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo');
     const snap = await getDoc(ref);
@@ -747,7 +745,6 @@ async function sincronizzaDaCloud(silenzioso = false) {
     }
 
   } catch(e) { console.error('sincronizzaDaCloud error:', e); }
-  finally { _syncLock = false; }
 }
 
 // Avvia sync automatico ogni 60 secondi quando l'utente è loggato
@@ -1305,7 +1302,6 @@ async function modificaCarta(idx) {
 
 // ── Listener realtime: propaga modifiche cloud → locale in tempo reale ──
 let _unsubscribeSnapshot = null;
-let _syncLock = false; // evita race condition tra listener e sincronizzaDaCloud
 
 function avviaListenerBackupCloud() {
   if (!_currentUser) return;
@@ -1315,7 +1311,6 @@ function avviaListenerBackupCloud() {
 
   _unsubscribeSnapshot = onSnapshot(ref, async (snap) => {
     if (!snap.exists()) return;
-    if (_syncLock) return; // sync in corso, salta questo evento
 
     const data = snap.data();
     const mazzoCloud = data.carte || [];
@@ -1332,8 +1327,28 @@ function avviaListenerBackupCloud() {
     // Mazzo locale corrente
     let mazzoLocale = await localforage.getItem(CUSTOM_KEY) || [];
 
-    // Rimuovi carte cancellate
+    // Rimuovi carte cancellate (nei tombstone)
     mazzoLocale = mazzoLocale.filter(c => !c.shash || !tombstonesAggiornati[c.shash]);
+
+    // Mappa cloud per shash per lookup rapido
+    const cloudMap = new Map(mazzoCloud
+      .filter(c => c.shash && !tombstonesAggiornati[c.shash])
+      .map(c => [c.shash, c])
+    );
+
+    // Aggiorna carte esistenti in locale con metadati più recenti dal cloud
+    // (preserva sempre img locale che è full-res)
+    mazzoLocale = mazzoLocale.map(c => {
+      if (!c.shash) return c;
+      const cc = cloudMap.get(c.shash);
+      if (!cc) return c;
+      const locSaved = c.savedAt || 0;
+      const cloudSaved = cc.savedAt || 0;
+      if (cloudSaved > locSaved && !c._inModifica) {
+        return { ...cc, img: c.img }; // metadati cloud, img locale
+      }
+      return c;
+    });
 
     // Aggiungi carte nuove dal cloud non presenti in locale
     const shashLocale = new Set(mazzoLocale.map(c => c.shash).filter(Boolean));
