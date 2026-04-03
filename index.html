@@ -653,6 +653,13 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
     const cloud        = snap.data().carte || [];
     // deleted_shashes: tombstone persistenti sul cloud (cancellazioni da qualsiasi dispositivo)
     const cloudDeleted = new Set(snap.data().deleted_shashes || []);
+    // Leggi anche tombstone dal documento dedicato (più affidabile)
+    try {
+      const tombSnap = await getDoc(doc(db, 'users', _currentUser.uid, 'backup', 'tombstones'));
+      if (tombSnap.exists()) {
+        (tombSnap.data().shashes || []).forEach(s => cloudDeleted.add(s));
+      }
+    } catch(_) {}
     // Carica in memoria i tombstone cloud così tutti i backupCloud successivi li conservano
     _deletedShashes = [...cloudDeleted];
     const locale      = await localforage.getItem('mazzo_custom') || [];
@@ -1295,6 +1302,16 @@ window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
     }
     await aggiornaListaCustom();
     if (_currentUser && navigator.onLine) {
+      // Scrivi tombstone su documento dedicato (atomico, non sovrascrivibile da backupCloud)
+      if (carta.shash) {
+        try {
+          const tombRef = doc(db, 'users', _currentUser.uid, 'backup', 'tombstones');
+          const tombSnap = await getDoc(tombRef);
+          const existing = tombSnap.exists() ? (tombSnap.data().shashes || []) : [];
+          const updated = [...new Set([...existing, carta.shash])];
+          await setDoc(tombRef, { shashes: updated, aggiornato: new Date().toISOString() });
+        } catch(e) { console.error('tombstone write error:', e); }
+      }
       if (window.backupCloud) await window.backupCloud(mazzo, carta.shash ? [carta.shash] : []);
     }
   }
