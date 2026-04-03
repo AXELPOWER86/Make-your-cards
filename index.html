@@ -606,15 +606,27 @@ window.loginGoogle = async () => {
     img.src = dataUrl;
   });
 }
-window.backupCloud = async (mazzo) => {
+window.backupCloud = async (mazzo, extraDeletedShashes = []) => {
   if (!_currentUser) return;
   try {
+    // Leggi i tombstone già sul cloud per non perderli
+    let cloudDeleted = [];
+    try {
+      const snap = await getDoc(doc(db, 'users', _currentUser.uid, 'backup', 'mazzo'));
+      if (snap.exists()) cloudDeleted = snap.data().deleted_shashes || [];
+    } catch(_) {}
+
+    // Unisci i tombstone esistenti con quelli nuovi (senza duplicati)
+    const mergedDeleted = [...new Set([...cloudDeleted, ...extraDeletedShashes])];
+
     const mazzoCloud = await Promise.all(mazzo.map(async carta => ({
       ...carta,
       img: await comprimiImgPerCloud(carta.img)
     })));
     await setDoc(doc(db, 'users', _currentUser.uid, 'backup', 'mazzo'), {
-      carte: mazzoCloud, aggiornato: new Date().toISOString()
+      carte: mazzoCloud,
+      deleted_shashes: mergedDeleted,
+      aggiornato: new Date().toISOString()
     });
   } catch(e) { console.error('backupCloud ERRORE:', e); }
 };
@@ -632,48 +644,69 @@ window.backupCloud = async (mazzo) => {
       return;
     }
 
-    const cloud = snap.data().carte || [];
-    const locale = await localforage.getItem('mazzo_custom') || [];
-    const pending = await localforage.getItem('mazzo_pending_ops') || [];
+    const cloud       = snap.data().carte || [];
+    // deleted_shashes: tombstone persistenti sul cloud (cancellazioni da qualsiasi dispositivo)
+    const cloudDeleted = new Set(snap.data().deleted_shashes || []);
+    const locale      = await localforage.getItem('mazzo_custom') || [];
+    const pending     = await localforage.getItem('mazzo_pending_ops') || [];
 
-    // Indici per il merge
-    const pendingDeleted  = new Set(pending.filter(p => p.op === 'delete').map(p => p.shash));
-    const pendingUpdated  = {};
+    // Tombstone offline (da dispositivo non loggato al momento della cancellazione)
+    const pendingDeleted = new Set(pending.filter(p => p.op === 'delete').map(p => p.shash));
+    const pendingUpdated = {};
     pending.filter(p => p.op === 'update').forEach(p => { pendingUpdated[p.shash] = p; });
 
-    // Parti dal cloud, applica le operazioni offline locali
+    // Unione di tutti i tombstone: cloud + offline
+    const tuttiDeleted = new Set([...cloudDeleted, ...pendingDeleted]);
+
+    // Base: carte cloud che non sono state cancellate
     let merged = cloud
-      .filter(c => !pendingDeleted.has(c.shash))          // rimuovi le cancellate offline
+      .filter(c => !tuttiDeleted.has(c.shash))
       .map(c => {
         if (pendingUpdated[c.shash]) {
-          // Carta modificata offline: usa la versione locale più recente
-          const cartaLocale = locale.find(l => l.shash === pendingUpdated[c.shash].newShash || l.shash === c.shash);
+          const cartaLocale = locale.find(l => l.shash === pendingUpdated[c.shash].newShash);
           return cartaLocale || c;
         }
         return c;
       });
 
-    // Aggiungi carte create offline che non esistono ancora sul cloud
-    const cloudShash = new Set(cloud.map(c => c.shash).filter(Boolean));
+    // Aggiungi carte solo locali: create offline, non cancellate, non già nel cloud
+    const cloudShash     = new Set(cloud.map(c => c.shash).filter(Boolean));
     const replacedShashes = new Set(Object.values(pendingUpdated).map(p => p.newShash).filter(Boolean));
     const soloLocali = locale.filter(c =>
       c.shash &&
-      !cloudShash.has(c.shash) &&       // non era già sul cloud
-      !pendingDeleted.has(c.shash) &&   // non è stata cancellata offline
-      !replacedShashes.has(c.shash)     // non è già inclusa come versione aggiornata sopra
+      !cloudShash.has(c.shash) &&
+      !tuttiDeleted.has(c.shash) &&
+      !replacedShashes.has(c.shash)
     );
     merged = [...merged, ...soloLocali];
 
-    // Scrivi il risultato in locale e sul cloud, svuota il log pending
+    // Deduplicazione finale: in caso di shash doppi (es. merge da più dispositivi simultanei)
+    // mantieni l'occorrenza più recente (updatedAt o ts più alto, altrimenti la prima)
+    const visti = new Map();
+    for (const c of merged) {
+      const key = c.shash || c.nome; // fallback su nome se shash mancante
+      if (!visti.has(key)) {
+        visti.set(key, c);
+      } else {
+        const esistente = visti.get(key);
+        // Tieni quello con updatedAt più recente; se mancano entrambi, tieni il primo
+        const tsNuovo   = c.updatedAt         ? new Date(c.updatedAt).getTime()         : (c.ts || 0);
+        const tsVecchio = esistente.updatedAt  ? new Date(esistente.updatedAt).getTime() : (esistente.ts || 0);
+        if (tsNuovo > tsVecchio) visti.set(key, c);
+      }
+    }
+    merged = [...visti.values()];
+
+    // Scrivi locale, poi cloud con tombstone aggiornati, poi svuota pending
     await localforage.setItem('mazzo_custom', merged);
     await window.aggiornaListaCustom();
-    await window.backupCloud(merged);
+    await window.backupCloud(merged, [...pendingDeleted]); // propaga tombstone offline sul cloud
     await localforage.removeItem('mazzo_pending_ops');
 
     const msgs = [];
-    if (soloLocali.length)         msgs.push(soloLocali.length + ' carte create offline caricate');
-    if (pendingDeleted.size)        msgs.push(pendingDeleted.size + ' cancellazioni offline applicate');
-    if (Object.keys(pendingUpdated).length) msgs.push(Object.keys(pendingUpdated).length + ' modifiche offline applicate');
+    if (soloLocali.length)                       msgs.push(soloLocali.length + ' carte create offline caricate');
+    if (pendingDeleted.size)                     msgs.push(pendingDeleted.size + ' cancellazioni offline applicate');
+    if (Object.keys(pendingUpdated).length)      msgs.push(Object.keys(pendingUpdated).length + ' modifiche offline applicate');
     if (msgs.length) await customAlert('☁️ Sincronizzazione:\n' + msgs.join('\n'));
 
   } catch(e) { console.error('sincronizzaDaCloud error:', e); }
@@ -773,7 +806,12 @@ window.backupCloud = async (mazzo) => {
 
   async function importaDaCommunity(carta) {
     const esistente = await localforage.getItem('mazzo_custom') || [];
-    if (esistente.some(c => c.shash === carta.shash)) {
+    const testoNorm = (carta.testo || '').toUpperCase().trim();
+    const duplicata = esistente.some(c =>
+      c.shash === carta.shash ||
+      (testoNorm && (c.testo || '').toUpperCase().trim() === testoNorm)
+    );
+    if (duplicata) {
       await customAlert('Questa carta è già nel tuo mazzo.'); return;
     }
     esistente.push({ ...carta, estratta: false, _inModifica: false });
@@ -1029,13 +1067,14 @@ window.backupCloud = async (mazzo) => {
     btn.classList.add('loading'); btn.disabled = true;
     try {
       const testo = document.getElementById('inp-body').value.trim();
-      const shash = testo ? await sha256String(testo.toUpperCase()) : null;
+      if (!testo) { await customAlert('Scrivi prima il testo della carta.'); return; }
+      const shash = await sha256String(testo.toUpperCase());
       const canvas = await generaCanvas();
-      const filename = shash ? 'carta_custom_' + shash.slice(0, 8) + '.png' : 'porky_carta.png';
+      const filename = 'carta_custom_' + shash.slice(0, 8) + '.png';
       const dataUrl = canvas.toDataURL('image/png');
       const rawBuf = await (await fetch(dataUrl)).arrayBuffer();
-      const pngBuf = shash ? injectPngTextChunk(rawBuf, 'porky_shash', shash) : rawBuf;
-      const injectedDataUrl = shash ? 'data:image/png;base64,' + arrayBufferToBase64(pngBuf) : dataUrl;
+      const pngBuf = injectPngTextChunk(rawBuf, 'porky_shash', shash);
+      const injectedDataUrl = 'data:image/png;base64,' + arrayBufferToBase64(pngBuf);
       await salvaFile(injectedDataUrl, filename);
     } catch(e) {
       await customAlert('Errore esportazione.\n' + e.message);
@@ -1153,10 +1192,22 @@ window.backupCloud = async (mazzo) => {
           okText: 'Sostituisci', cancelText: 'Unisci'
         });
         if (scelta) {
-          await localforage.setItem(CUSTOM_KEY, dati);
+          // Sostituisci: deduplicazione interna al file stesso
+          const visti = new Map();
+          for (const c of dati) {
+            const key = c.shash || (c.testo || '').toUpperCase().trim() || c.nome;
+            if (key && !visti.has(key)) visti.set(key, c);
+          }
+          await localforage.setItem(CUSTOM_KEY, [...visti.values()]);
         } else {
-          const shashEsistenti = new Set(esistente.map(c => c.shash).filter(Boolean));
-          const nuove = dati.filter(c => !c.shash || !shashEsistenti.has(c.shash));
+          const shashEsistenti  = new Set(esistente.map(c => c.shash).filter(Boolean));
+          const testiEsistenti  = new Set(esistente.map(c => (c.testo || '').toUpperCase().trim()).filter(Boolean));
+          const nuove = dati.filter(c => {
+            if (c.shash && shashEsistenti.has(c.shash)) return false;
+            const tn = (c.testo || '').toUpperCase().trim();
+            if (tn && testiEsistenti.has(tn)) return false;
+            return true;
+          });
           await localforage.setItem(CUSTOM_KEY, [...esistente, ...nuove]);
           await customAlert('Importate ' + nuove.length + ' carte nuove, ' + (dati.length - nuove.length) + ' duplicate ignorate.');
           await aggiornaListaCustom();
@@ -1226,9 +1277,10 @@ window.backupCloud = async (mazzo) => {
     await localforage.setItem(CUSTOM_KEY, mazzo);
     await aggiornaListaCustom();
     if (_currentUser && navigator.onLine) {
-      if (window.backupCloud) await window.backupCloud(mazzo);
+      // Online: backup con tombstone → altri dispositivi non reinseriranno la carta
+      if (window.backupCloud) await window.backupCloud(mazzo, carta.shash ? [carta.shash] : []);
     } else if (carta.shash) {
-      // Offline o non loggato: registra la cancellazione nel log pending
+      // Offline: registra nel log pending, sarà propagato al prossimo login
       const pending = await localforage.getItem('mazzo_pending_ops') || [];
       const filtrato = pending.filter(p => p.shash !== carta.shash && p.newShash !== carta.shash);
       filtrato.push({ op: 'delete', shash: carta.shash, ts: Date.now() });
