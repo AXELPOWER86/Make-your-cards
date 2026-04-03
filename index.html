@@ -1314,16 +1314,29 @@ async function eliminaCarta(idx) {
   const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
   const carta = mazzo[idx];
   if (!carta) return;
+
   if (!await customConfirm({
     message: 'Eliminare la carta "' + (carta.testo || carta.nome) + '"?',
     okText: 'SI', cancelText: 'NO'
   })) return;
+
+  // Rimuove la carta dal mazzo locale
   mazzo.splice(idx, 1);
   await localforage.setItem(CUSTOM_KEY, mazzo);
   await aggiornaListaCustom();
-  // Aggiorna sempre il cloud dopo eliminazione (shash opzionale per tombstone)
+
+  // Aggiorna tombstones locali per l'eliminazione
+  const tombstones = await localforage.getItem('TOMBSTONES') || {};
+  if (carta.shash) tombstones[carta.shash] = Date.now();
+  await localforage.setItem('TOMBSTONES', tombstones);
+
+  // Backup cloud con eventuale carta eliminata
   await backupCloud(mazzo, carta.shash ? [carta.shash] : []);
+
+  // Piccola pausa per evitare conflitti
   await new Promise(r => setTimeout(r, 300));
+
+  // Sincronizza il mazzo dal cloud, includendo le eliminazioni
   await sincronizzaDaCloud(true);
 }
 
