@@ -767,9 +767,17 @@ async function sincronizzaDaCloud(silenzioso = false) {
 // Avvia sync automatico ogni 60 secondi quando l'utente è loggato
 function avviaAutoSync() {
   fermaAutoSync();
-  _syncInterval = setInterval(() => {
-    if (_currentUser) sincronizzaDaCloud(true).catch(console.error);
-  }, 60_000);
+  _syncInterval = setInterval(async () => {
+    if (!_currentUser) return;
+
+    // 🔴 prima push locale → cloud
+    const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
+    await backupCloud(mazzo);
+
+    // 🔴 poi pull cloud → locale
+    await sincronizzaDaCloud(true);
+
+  }, 15000); // ogni 15 secondi
 }
 function fermaAutoSync() {
   if (_syncInterval) { clearInterval(_syncInterval); _syncInterval = null; }
@@ -791,7 +799,9 @@ onAuthStateChanged(auth, async user => {
     btnLogout.style.display = 'inline-block';
     btnCom.style.display    = 'inline-block';
     // Sincronizza all'avvio (silenzioso: niente popup se non ci sono novità)
-    await sincronizzaDaCloud(false);
+    await sincronizzaDaCloud(true);
+    await new Promise(r => setTimeout(r, 300));
+    await sincronizzaDaCloud(true);
     await aggiornaListaCustom();
     await tentaRipristinoAutomatico();
     // Avvia sync automatico ogni 60s
@@ -1204,7 +1214,7 @@ document.getElementById('btn-salva').addEventListener('click', async () => {
     await localforage.setItem(CUSTOM_KEY, mazzoFinale);
     await aggiornaListaCustom();
     await backupCloud(mazzoFinale, vecchioShash ? [vecchioShash] : []);
-    await sincronizzaDaCloud(true);
+    await new Promise(r => setTimeout(r, 300));
 
     // Se la carta era condivisa in community, aggiorna automaticamente anche lì
     if (communityId) await condividiInCommunity(carta);
@@ -1313,6 +1323,7 @@ async function eliminaCarta(idx) {
   await aggiornaListaCustom();
   // Aggiorna sempre il cloud dopo eliminazione (shash opzionale per tombstone)
   await backupCloud(mazzo, carta.shash ? [carta.shash] : []);
+  await new Promise(r => setTimeout(r, 300));
   await sincronizzaDaCloud(true);
 }
 
