@@ -426,7 +426,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebas
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
 import { getFirestore, doc, setDoc, getDoc, collection, getDocs,
-         addDoc, updateDoc, deleteDoc, increment, query, orderBy, limit }
+         addDoc, updateDoc, deleteDoc, increment, query, orderBy, limit, onSnapshot }
   from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -453,6 +453,7 @@ let _currentUser    = null;
 let _communityCards = [];
 let _cartellaHandle = null;
 let _syncTimer      = null;
+let _unsubscribe    = null;  // listener realtime Firestore
 let _syncBusy       = false; // mutex per evitare sync concorrenti
 
 localforage.config({ name: 'PorkysGame', storeName: 'mazzo_carte' });
@@ -673,7 +674,7 @@ async function sync(silenzioso = true) {
       if (snap.exists()) {
         const data   = snap.data();
         cloudCarte   = data.carte   || [];
-        cloudDeleted = data.deleted || {};
+        cloudDeleted = data.tombstones || {};
       }
     } catch (_) { /* offline: usa solo locale */ }
 
@@ -696,7 +697,7 @@ async function sync(silenzioso = true) {
         return { ...rest, img: await comprimiImgPerCloud(c.img) };
       })
     );
-    await setDoc(ref, { carte: carteCloud, deleted, aggiornato: now });
+    await setDoc(ref, { carte: carteCloud, tombstones: deleted, aggiornato: now });
 
   } catch(e) {
     console.error('sync error:', e);
@@ -715,31 +716,36 @@ async function aggiungiTombstone(shash) {
   local[shash] = ts;
   localStorage.setItem('porky_deleted', JSON.stringify(purgaTombstones(local)));
 
-  // Cloud: arrayUnion-equivalente con updateDoc (solo il campo deleted)
+  // Cloud: setDoc con merge:true crea il documento se non esiste,
+  // aggiorna solo il campo tombstones se esiste già (updateDoc fallirebbe su doc inesistente)
   if (_currentUser) {
     try {
       const ref = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo');
-      // Leggi deleted cloud, aggiungi, riscrivi atomicamente
       const snap = await getDoc(ref);
-      const cloudDeleted = snap.exists() ? (snap.data().deleted || {}) : {};
+      const cloudDeleted = snap.exists() ? (snap.data().tombstones || {}) : {};
       cloudDeleted[shash] = ts;
-      await updateDoc(ref, { deleted: purgaTombstones(cloudDeleted), aggiornato: ts });
+      await setDoc(ref, { tombstones: purgaTombstones(cloudDeleted), aggiornato: ts }, { merge: true });
     } catch (_) { /* offline: il tombstone locale verrà propagato al prossimo sync */ }
   }
 }
 
-// ── Auto-sync ogni 60s ──
-function avviaSync() {
-  fermaSync();
-  // Realtime: quando il documento cloud cambia → sync() immediato
-  _unsubscribe = onSnapshot(
-    doc(db, 'users', _currentUser.uid, 'backup', 'mazzo'),
-    () => sync(true)   // usa la stessa mergeMazzi() testata, nessuna logica separata
-  );
-  // Fallback periodico ogni 60s (per recuperare tombstone offline, visibilità, ecc.)
+// ── Listener realtime + fallback periodico ──
+// onSnapshot: propaga aggiornamenti quasi istantaneamente agli altri dispositivi.
+// Il timer da 60s è solo un fallback (tombstone offline, tab tornato visibile, ecc.).
+// Entrambi chiamano la stessa sync() con la stessa mergeMazzi() → nessun conflitto.
+function avviaAutoSync() {
+  fermaAutoSync();
+
+  // Realtime: ogni volta che il documento cloud cambia, sync() immediato
+  if (_currentUser) {
+    const ref = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo');
+    _unsubscribe = onSnapshot(ref, () => sync(true));
+  }
+
+  // Fallback periodico ogni 60s
   _syncTimer = setInterval(() => sync(true), 60000);
 }
-function fermaSync() {
+function fermaAutoSync() {
   if (_unsubscribe) { _unsubscribe(); _unsubscribe = null; }
   if (_syncTimer)   { clearInterval(_syncTimer); _syncTimer = null; }
 }
