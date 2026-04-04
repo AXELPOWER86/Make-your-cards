@@ -924,9 +924,6 @@ function renderCommunity(cards) {
     const img   = document.createElement('img');
     img.src     = carta.img; img.title = carta.testo || '';
 
-    const testo = document.createElement('div');
-    testo.className = 'c-testo'; testo.textContent = carta.testo || '';
-
     const likes = document.createElement('div');
     likes.className = 'c-likes'; likes.id = 'likes-' + carta.id;
     likes.textContent = '❤️ ' + (carta.likes || 0);
@@ -956,7 +953,7 @@ function renderCommunity(cards) {
       btns.appendChild(btnDel);
     }
 
-    wrap.appendChild(img); wrap.appendChild(testo);
+    wrap.appendChild(img);
     wrap.appendChild(likes); wrap.appendChild(btns);
 
     if (isAdmin) {
