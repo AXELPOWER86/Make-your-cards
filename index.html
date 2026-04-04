@@ -607,15 +607,16 @@ async function mergeMazzi({ locale, cloud, deleted }) {
   locale = await Promise.all(locale.map(garantisciShash));
   cloud  = await Promise.all(cloud.map(garantisciShash));
 
-  const deletedMap = deleted || {}; // { shash: timestamp }
+  // deleted è { shash: timestamp } — il tombstone vince solo se
+  // la carta è stata salvata PRIMA della cancellazione.
+  // Se savedAt > timestamp tombstone → la carta è stata ri-creata dopo → sopravvive.
+  const deletedMap = deleted || {};
   const map = new Map();
 
-  // Prima passata: tutte le carte locali
-  // Il tombstone viene applicato solo se è PIÙ RECENTE del savedAt della carta.
-  // Se la carta è stata salvata DOPO la cancellazione, sopravvive.
+  // Prima passata: carte locali
   for (const c of locale) {
     const ts = deletedMap[c.shash];
-    if (ts && (c.savedAt || 0) <= ts) continue; // tombstone vince
+    if (ts && (c.savedAt || 0) <= ts) continue; // cancellata e non ri-creata dopo
     if (map.has(c.shash)) {
       const existing = map.get(c.shash);
       if ((c.savedAt || 0) > (existing.savedAt || 0)) map.set(c.shash, { ...c });
@@ -627,17 +628,14 @@ async function mergeMazzi({ locale, cloud, deleted }) {
   // Seconda passata: carte cloud
   for (const cc of cloud) {
     const ts = deletedMap[cc.shash];
-    if (ts && (cc.savedAt || 0) <= ts) continue; // tombstone vince
+    if (ts && (cc.savedAt || 0) <= ts) continue; // cancellata e non ri-creata dopo
     if (!map.has(cc.shash)) {
-      // Carta nuova dal cloud: entra in locale
       map.set(cc.shash, { ...cc });
     } else {
       const loc = map.get(cc.shash);
       if ((cc.savedAt || 0) > (loc.savedAt || 0)) {
-        // Cloud più recente: aggiorna metadati, MA mantieni img locale (full-res)
         map.set(cc.shash, { ...cc, img: loc.img });
       }
-      // Locale più recente (o pari): non fare nulla, locale vince già
     }
   }
 
@@ -669,16 +667,14 @@ async function sync(silenzioso = true) {
     }));
 
     // Leggi cloud
-    let cloudCarte   = [];
+    let cloudCarte  = [];
     let cloudDeleted = {};
-    let cloudEsiste  = false;
     try {
       const snap = await getDoc(ref);
       if (snap.exists()) {
         const data   = snap.data();
-        cloudCarte   = data.carte      || [];
+        cloudCarte   = data.carte   || [];
         cloudDeleted = data.tombstones || {};
-        cloudEsiste  = true;
       }
     } catch (_) { /* offline: usa solo locale */ }
 
@@ -687,17 +683,8 @@ async function sync(silenzioso = true) {
     const deleted = purgaTombstones({ ...cloudDeleted, ...localDeleted });
     localStorage.setItem('porky_deleted', JSON.stringify(deleted));
 
-    // Merge — ma solo se il cloud esiste davvero.
-    // Se cloud è vuoto (documento non ancora creato o carte=[]),
-    // non sovrascriviamo il locale: il locale è la fonte di verità.
-    // Applichiamo comunque i tombstone locali.
-    let mazzoFinale;
-    if (!cloudEsiste || cloudCarte.length === 0) {
-      // Nessun dato cloud: applica solo tombstone locali al locale
-      mazzoFinale = locale.filter(c => !c.shash || !deleted[c.shash]);
-    } else {
-      mazzoFinale = await mergeMazzi({ locale, cloud: cloudCarte, deleted });
-    }
+    // Merge
+    const mazzoFinale = await mergeMazzi({ locale, cloud: cloudCarte, deleted });
 
     // Salva locale
     await localforage.setItem(CUSTOM_KEY, mazzoFinale);
@@ -710,7 +697,14 @@ async function sync(silenzioso = true) {
         return { ...rest, img: await comprimiImgPerCloud(c.img) };
       })
     );
-    await setDoc(ref, { carte: carteCloud, tombstones: deleted, aggiornato: now });
+    // Pulizia tombstone: rimuovi dal cloud i tombstone che non servono più
+    // (quelli relativi a carte che hanno savedAt > tombstone e sono sopravvissute al merge)
+    const shashNelMazzo = new Set(mazzoFinale.map(c => c.shash).filter(Boolean));
+    const deletedPulito = Object.fromEntries(
+      Object.entries(deleted).filter(([shash]) => !shashNelMazzo.has(shash))
+    );
+    localStorage.setItem('porky_deleted', JSON.stringify(deletedPulito));
+    await setDoc(ref, { carte: carteCloud, tombstones: deletedPulito, aggiornato: now });
 
   } catch(e) {
     console.error('sync error:', e);
@@ -1404,7 +1398,7 @@ document.getElementById('inp-backup').addEventListener('change', async event => 
     // Assicura savedAt e shash su ogni carta importata
     const now         = Date.now();
     const datiSanati  = await Promise.all(
-      dati.map(async c => await garantisciShash({ ...c, savedAt: c.savedAt || now }))
+      dati.map(async c => await garantisciShash({ ...c, savedAt: now })) // now: batte tombstone precedenti
     );
 
     const esistente = await localforage.getItem(CUSTOM_KEY) || [];
