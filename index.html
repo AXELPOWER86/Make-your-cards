@@ -922,7 +922,10 @@ function renderCommunity(cards) {
     wrap.className = 'community-card';
 
     const img   = document.createElement('img');
-    img.src     = carta.img; img.title = carta.testo || '';
+    img.src     = carta.img; img.title = 'Carta ' + Math.floor(Math.random() * 9000 + 1000);
+
+    const testo = document.createElement('div');
+    testo.className = 'c-testo'; testo.textContent = carta.testo || '';
 
     const likes = document.createElement('div');
     likes.className = 'c-likes'; likes.id = 'likes-' + carta.id;
@@ -953,7 +956,7 @@ function renderCommunity(cards) {
       btns.appendChild(btnDel);
     }
 
-    wrap.appendChild(img);
+    wrap.appendChild(img); wrap.appendChild(testo);
     wrap.appendChild(likes); wrap.appendChild(btns);
 
     if (isAdmin) {
