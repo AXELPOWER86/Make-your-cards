@@ -1275,11 +1275,14 @@ document.getElementById('btn-salva').addEventListener('click', async () => {
     // Se il testo è cambiato, il vecchio shash diventa tombstone
     if (vecchioShash) await aggiungiTombstone(vecchioShash);
 
-    // Sync: porta la carta nuova sul cloud e scarica eventuali aggiornamenti
-    sync(true);
-
-    // Se la carta era condivisa in community, aggiorna automaticamente anche lì
-    if (communityId) await condividiInCommunity(carta);
+    // Se la carta era condivisa in community, aggiorna prima la community
+    // poi manda sync in background
+    if (communityId) {
+      await condividiInCommunity(carta);
+      sync(true);
+    } else {
+      sync(true);
+    }
 
     document.getElementById('preview-share-wrap').style.display = 'none';
     resetAll();
