@@ -445,14 +445,15 @@ const db   = getFirestore(app);
 // ═══════════════════════════════════════════════════════
 // COSTANTI E STATO
 // ═══════════════════════════════════════════════════════
-const CUSTOM_KEY        = 'mazzo_custom';
-const TOMBSTONE_KEY     = 'mazzo_tombstones';
-const TOMBSTONE_TTL_MS  = 30 * 24 * 60 * 60 * 1000; // 30 giorni
-const ADMIN_UID         = '6PF8IUUL2IZLXj8v82yHM133vvg2';
+const CUSTOM_KEY       = 'mazzo_custom';
+const TOMBSTONE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 giorni
+const ADMIN_UID        = '6PF8IUUL2IZLXj8v82yHM133vvg2';
 
 let _currentUser    = null;
 let _communityCards = [];
 let _cartellaHandle = null;
+let _syncTimer      = null;
+let _syncBusy       = false; // mutex per evitare sync concorrenti
 
 localforage.config({ name: 'PorkysGame', storeName: 'mazzo_carte' });
 
@@ -474,10 +475,9 @@ function modalDialog(cfgOrMessage, type = 'alert') {
     okBtn.style.display = cancelBtn.style.display = notifBtn.style.display = 'none';
     textEl.textContent = message;
 
-    // Clona per rimuovere vecchi listener
-    const OK    = okBtn.cloneNode(true);    okBtn.replaceWith(OK);
-    const CA    = cancelBtn.cloneNode(true); cancelBtn.replaceWith(CA);
-    const NO    = notifBtn.cloneNode(true);  notifBtn.replaceWith(NO);
+    const OK = okBtn.cloneNode(true);    okBtn.replaceWith(OK);
+    const CA = cancelBtn.cloneNode(true); cancelBtn.replaceWith(CA);
+    const NO = notifBtn.cloneNode(true);  notifBtn.replaceWith(NO);
 
     function cleanup() {
       overlay.style.display = '';
@@ -541,239 +541,200 @@ const customAlert   = msg => modalDialog(msg, 'alert');
 const customConfirm = cfg => modalDialog(cfg, 'confirm');
 
 // ═══════════════════════════════════════════════════════
-// TOMBSTONE HELPERS
+// UTILITY: shash
 // ═══════════════════════════════════════════════════════
-async function getTombstones() {
-  return await localforage.getItem(TOMBSTONE_KEY) || {};
+async function sha256String(str) {
+  const buf    = new TextEncoder().encode(str);
+  const digest = await crypto.subtle.digest('SHA-256', buf);
+  return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2,'0')).join('');
 }
-async function setTombstones(t) {
-  await localforage.setItem(TOMBSTONE_KEY, t);
-}
-function purgaTombstones(t) {
-  const now = Date.now();
-  const out = {};
-  for (const [s, ts] of Object.entries(t)) {
-    if (now - ts < TOMBSTONE_TTL_MS) out[s] = ts;
-  }
-  return out;
+
+// Garantisce che ogni carta abbia uno shash valido
+async function garantisciShash(carta) {
+  if (carta.shash && carta.shash.trim()) return carta;
+  const base = carta.testo
+    ? carta.testo.toUpperCase().trim()
+    : (carta.nome || '') + Date.now() + Math.random();
+  return { ...carta, shash: await sha256String(base) };
 }
 
 // ═══════════════════════════════════════════════════════
-// COMPRESSIONE IMMAGINI
+// COMPRESSIONE IMMAGINI (solo per il cloud)
 // ═══════════════════════════════════════════════════════
 function comprimiImgPerCloud(dataUrl) {
   return new Promise(resolve => {
     const img = new Image();
     img.onload = () => {
       const canvas = document.createElement('canvas');
-      const MAX = 400;
-      const ratio = Math.min(MAX / img.width, MAX / img.height, 1);
+      const MAX    = 400;
+      const ratio  = Math.min(MAX / img.width, MAX / img.height, 1);
       canvas.width  = Math.round(img.width  * ratio);
       canvas.height = Math.round(img.height * ratio);
       canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
       resolve(canvas.toDataURL('image/jpeg', 0.7));
     };
+    img.onerror = () => resolve(dataUrl); // fallback: usa originale
     img.src = dataUrl;
   });
 }
 
 // ═══════════════════════════════════════════════════════
-// CHIAVE UNIVOCA PER UNA CARTA (usata in tutto il merge)
-// Priorità: shash (non vuoto) > nome > testo normalizzato
+// TOMBSTONE: TTL purge
 // ═══════════════════════════════════════════════════════
-function cartaKey(c) {
-  if (c.shash && c.shash.trim()) return 'sh:' + c.shash.trim();
-  if (c.nome  && c.nome.trim())  return 'nm:' + c.nome.trim();
-  const t = (c.testo || '').toUpperCase().trim();
-  if (t)                         return 'tx:' + t;
-  return null;
+function purgaTombstones(deleted) {
+  const now = Date.now();
+  const out = {};
+  for (const [s, ts] of Object.entries(deleted || {})) {
+    if (now - ts < TOMBSTONE_TTL_MS) out[s] = ts;
+  }
+  return out;
 }
 
 // ═══════════════════════════════════════════════════════
-// BACKUP CLOUD
-// Scrive il mazzo sul cloud con i tombstone aggiornati.
-// Le img vengono compresse per risparmiare spazio.
-// tombstoneExtra: shash aggiuntivi da marcare come cancellati.
+// MERGE BIDIREZIONALE (cuore del sistema)
+//
+// Regole:
+//  1. locale è sempre autoritario come sorgente primaria
+//  2. cloud porta carte nuove che locale non ha
+//  3. se stessa carta su entrambi → vince savedAt più alto,
+//     ma img locale NON viene mai sovrascritta (è full-res)
+//  4. tombstone batte tutto: carta eliminata sparisce ovunque
+//  5. shash mancante → assegnato automaticamente
 // ═══════════════════════════════════════════════════════
-async function backupCloud(mazzo, tombstoneExtra = []) {
-  if (!_currentUser) return;
-  try {
-    const ref = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo');
-    const now = Date.now();
+async function mergeMazzi({ locale, cloud, deleted }) {
+  // Garantisce shash su tutte le carte
+  locale = await Promise.all(locale.map(garantisciShash));
+  cloud  = await Promise.all(cloud.map(garantisciShash));
 
-    // Leggi tombstone cloud per non perderli mai (merge con quelli locali)
-    let tombstones = await getTombstones();
+  const deletedSet = new Set(Object.keys(deleted || {}));
+  const map = new Map();
+
+  // Prima passata: tutte le carte locali
+  // Se stesso shash compare due volte in locale (es. dopo import backup),
+  // vince quella con savedAt più alto
+  for (const c of locale) {
+    if (deletedSet.has(c.shash)) continue;
+    if (map.has(c.shash)) {
+      const existing = map.get(c.shash);
+      if ((c.savedAt || 0) > (existing.savedAt || 0)) map.set(c.shash, { ...c });
+    } else {
+      map.set(c.shash, { ...c });
+    }
+  }
+
+  // Seconda passata: carte cloud
+  for (const cc of cloud) {
+    if (deletedSet.has(cc.shash)) continue;
+    if (!map.has(cc.shash)) {
+      // Carta nuova dal cloud: entra in locale
+      map.set(cc.shash, { ...cc });
+    } else {
+      const loc = map.get(cc.shash);
+      if ((cc.savedAt || 0) > (loc.savedAt || 0)) {
+        // Cloud più recente: aggiorna metadati, MA mantieni img locale (full-res)
+        map.set(cc.shash, { ...cc, img: loc.img });
+      }
+      // Locale più recente (o pari): non fare nulla, locale vince già
+    }
+  }
+
+  return [...map.values()];
+}
+
+// ═══════════════════════════════════════════════════════
+// SYNC: unico punto di sincronizzazione cloud ↔ locale
+//
+// Flusso:
+//  1. Leggi locale
+//  2. Leggi cloud (se online e loggato)
+//  3. Merge bidirezionale
+//  4. Salva risultato in locale
+//  5. Scrivi risultato su cloud (img compresse)
+// ═══════════════════════════════════════════════════════
+async function sync(silenzioso = true) {
+  if (!_currentUser) return;
+  if (_syncBusy) return; // evita sync concorrenti
+  _syncBusy = true;
+
+  try {
+    const ref    = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo');
+    const now    = Date.now();
+
+    // Leggi locale (assicura savedAt su tutte le carte)
+    let locale = (await localforage.getItem(CUSTOM_KEY) || []).map(c => ({
+      ...c, savedAt: c.savedAt || now
+    }));
+
+    // Leggi cloud
+    let cloudCarte  = [];
+    let cloudDeleted = {};
     try {
       const snap = await getDoc(ref);
       if (snap.exists()) {
-        const cloudT = snap.data().tombstones || {};
-        for (const [s, ts] of Object.entries(cloudT)) {
-          if (!tombstones[s] || ts > tombstones[s]) tombstones[s] = ts;
-        }
+        const data   = snap.data();
+        cloudCarte   = data.carte   || [];
+        cloudDeleted = data.deleted || {};
       }
-    } catch(_) { /* se offline: usa solo tombstone locali */ }
+    } catch (_) { /* offline: usa solo locale */ }
 
-    for (const s of tombstoneExtra) {
-      if (s && s.trim() && !tombstones[s]) tombstones[s] = now;
-    }
-    tombstones = purgaTombstones(tombstones);
-    await setTombstones(tombstones);
+    // Unisci tombstone locali + cloud, purga TTL
+    const localDeleted = JSON.parse(localStorage.getItem('porky_deleted') || '{}');
+    const deleted = purgaTombstones({ ...cloudDeleted, ...localDeleted });
+    localStorage.setItem('porky_deleted', JSON.stringify(deleted));
 
-    const mazzoCloud = await Promise.all(
-      mazzo.map(async c => {
+    // Merge
+    const mazzoFinale = await mergeMazzi({ locale, cloud: cloudCarte, deleted });
+
+    // Salva locale
+    await localforage.setItem(CUSTOM_KEY, mazzoFinale);
+    await aggiornaListaCustom();
+
+    // Scrivi cloud (img compresse)
+    const carteCloud = await Promise.all(
+      mazzoFinale.map(async c => {
         const { _inModifica, ...rest } = c;
-        return { ...rest, img: await comprimiImgPerCloud(c.img), savedAt: c.savedAt || now };
+        return { ...rest, img: await comprimiImgPerCloud(c.img) };
       })
     );
-    await setDoc(ref, { carte: mazzoCloud, tombstones, aggiornato: now });
-  } catch(e) { console.error('backupCloud ERRORE:', e); }
+    await setDoc(ref, { carte: carteCloud, deleted, aggiornato: now });
+
+  } catch(e) {
+    console.error('sync error:', e);
+  } finally {
+    _syncBusy = false;
+  }
 }
 
-// ═══════════════════════════════════════════════════════
-// SINCRONIZZAZIONE DA CLOUD
-// Merge bidirezionale completo:
-//  - Ogni carta identificata da cartaKey() (shash > nome > testo)
-//  - Vince savedAt più alto; a parità → locale ha priorità
-//  - Tombstone (shash-only) prevalgono sempre
-//  - Le carte cloud arrivano con img compressa → vengono usate solo
-//    se il locale non ha già quella carta (così non sovrascriviamo
-//    la full-res locale con una versione compressa)
-//  - Sincronizzazione automatica ogni 60s se loggato
-// ═══════════════════════════════════════════════════════
-let _syncInterval = null;
+// ── Aggiunge uno shash ai tombstone e propaga su cloud immediatamente ──
+async function aggiungiTombstone(shash) {
+  if (!shash || !shash.trim()) return;
+  const ts = Date.now();
 
-// ── Merge cloud corretto (sincronizzaDaCloud) ──
-async function sincronizzaDaCloud(silenzioso = false) {
-  if (!_currentUser) return;
-  try {
-    const ref  = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo');
-    const snap = await getDoc(ref);
-    let locale = await localforage.getItem(CUSTOM_KEY) || [];
-    let localeModificato = false;
+  // Locale (localStorage, non localforage: veloce e sincrono)
+  const local = JSON.parse(localStorage.getItem('porky_deleted') || '{}');
+  local[shash] = ts;
+  localStorage.setItem('porky_deleted', JSON.stringify(purgaTombstones(local)));
 
-    const now = Date.now();
-    // Assicura savedAt per tutte le carte
-    locale = locale.map(c => {
-      if (!c.savedAt) { localeModificato = true; return { ...c, savedAt: now }; }
-      return c;
-    });
-    if (localeModificato) await localforage.setItem(CUSTOM_KEY, locale);
-
-    if (!snap.exists()) {
-      if (locale.length > 0) await backupCloud(locale);
-      return;
-    }
-
-    const data       = snap.data();
-    const cloudCarte = data.carte || [];
-
-    // Tombstones
-    const cloudTombstones = data.tombstones || {};
-    const localTombstones = await getTombstones();
-    let tombstones = { ...cloudTombstones };
-    for (const [s, ts] of Object.entries(localTombstones)) {
-      if (!tombstones[s] || ts > tombstones[s]) tombstones[s] = ts;
-    }
-    tombstones = purgaTombstones(tombstones);
-    await setTombstones(tombstones);
-
-    const isTombstoned = (c) => c.shash && c.shash.trim() && tombstones[c.shash.trim()];
-
-    const mergeMap = new Map();
-
-    // locale
-    for (const c of locale) {
-      if (isTombstoned(c)) continue;
-      const k = cartaKey(c);
-      if (!k) continue;
-      mergeMap.set(k, c);
-    }
-
-    let carteNuoveDaCloud = 0;
-    let carteAggiornateDaCloud = 0;
-
-    // cloud
-    for (const cc of cloudCarte) {
-      if (isTombstoned(cc)) continue;
-      const k = cartaKey(cc);
-      if (!k) continue;
-
-      if (!mergeMap.has(k)) {
-        mergeMap.set(k, { ...cc, savedAt: cc.savedAt || now });
-        carteNuoveDaCloud++;
-      } else {
-        const loc = mergeMap.get(k);
-        const locSaved = loc.savedAt || 0;
-        const cloudSaved = cc.savedAt || 0;
-
-        if (!loc._inModifica && cloudSaved > locSaved) {
-          mergeMap.set(k, { ...cc, img: loc.img, savedAt: cloudSaved });
-          carteAggiornateDaCloud++;
-        }
-      }
-    }
-
-    // 🔴 FIX FONDAMENTALE
-    for (const c of locale) {
-      if (isTombstoned(c)) continue;
-      const k = cartaKey(c);
-      if (!k) continue;
-
-      if (!mergeMap.has(k)) {
-        mergeMap.set(k, c);
-      }
-    }
-
-    const mazzoFinale = [...mergeMap.values()];
-    const localeNeedsUpdate = carteNuoveDaCloud > 0 || carteAggiornateDaCloud > 0 || localeModificato;
-    if (localeNeedsUpdate) {
-      await localforage.setItem(CUSTOM_KEY, mazzoFinale);
-      await aggiornaListaCustom();
-    }
-
-    // Aggiorna cloud se necessario
-    const cloudKeys = new Set(cloudCarte.map(cartaKey).filter(Boolean));
-    const nuovePerCloud = mazzoFinale.filter(c => {
-      const k = cartaKey(c);
-      return k && !cloudKeys.has(k);
-    });
-    const cloudNeedsUpdate =
-      nuovePerCloud.length > 0 ||
-      localeModificato ||
-      Object.keys(cloudTombstones).length !== Object.keys(tombstones).length;
-    if (cloudNeedsUpdate) await backupCloud(mazzoFinale);
-
-    if (!silenzioso) {
-      const n = carteNuoveDaCloud + carteAggiornateDaCloud + nuovePerCloud.length;
-      if (n > 0) {
-        const parti = [];
-        if (carteNuoveDaCloud > 0)      parti.push(carteNuoveDaCloud + ' carte nuove dal cloud');
-        if (carteAggiornateDaCloud > 0) parti.push(carteAggiornateDaCloud + ' carte aggiornate dal cloud');
-        if (nuovePerCloud.length > 0)   parti.push(nuovePerCloud.length + ' carte locali caricate sul cloud');
-        await customAlert('☁️ Sincronizzazione:\n' + parti.join('\n'));
-      }
-    }
-
-  } catch(e) { console.error('sincronizzaDaCloud error:', e); }
+  // Cloud: arrayUnion-equivalente con updateDoc (solo il campo deleted)
+  if (_currentUser) {
+    try {
+      const ref = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo');
+      // Leggi deleted cloud, aggiungi, riscrivi atomicamente
+      const snap = await getDoc(ref);
+      const cloudDeleted = snap.exists() ? (snap.data().deleted || {}) : {};
+      cloudDeleted[shash] = ts;
+      await updateDoc(ref, { deleted: purgaTombstones(cloudDeleted), aggiornato: ts });
+    } catch (_) { /* offline: il tombstone locale verrà propagato al prossimo sync */ }
+  }
 }
 
-// Avvia sync automatico ogni 60 secondi quando l'utente è loggato
+// ── Auto-sync ogni 60s ──
 function avviaAutoSync() {
   fermaAutoSync();
-  _syncInterval = setInterval(async () => {
-    if (!_currentUser) return;
-
-    // 🔴 prima push locale → cloud
-    const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
-    await backupCloud(mazzo);
-
-    // 🔴 poi pull cloud → locale
-    await sincronizzaDaCloud(true);
-
-  }, 15000); // ogni 15 secondi
+  _syncTimer = setInterval(() => sync(true), 60000);
 }
 function fermaAutoSync() {
-  if (_syncInterval) { clearInterval(_syncInterval); _syncInterval = null; }
+  if (_syncTimer) { clearInterval(_syncTimer); _syncTimer = null; }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -785,28 +746,25 @@ onAuthStateChanged(auth, async user => {
   const btnLogin  = document.getElementById('btn-login');
   const btnLogout = document.getElementById('btn-logout');
   const btnCom    = document.getElementById('btn-community');
+
   if (user) {
     loginInfo.innerHTML = (user.photoURL ? `<img src="${user.photoURL}" alt="">` : '') +
                           ' ' + (user.displayName || user.email);
     btnLogin.style.display  = 'none';
     btnLogout.style.display = 'inline-block';
     btnCom.style.display    = 'inline-block';
-    // Sincronizza all'avvio (silenzioso: niente popup se non ci sono novità)
-    await sincronizzaDaCloud(true);
-    await new Promise(r => setTimeout(r, 300));
-    await sincronizzaDaCloud(true);
-    await aggiornaListaCustom();
-    await tentaRipristinoAutomatico();
-    // Avvia listener realtime + sync automatico periodico
-    avviaListenerBackupCloud();
+
+    // Sync unica all'avvio
+    await sync(true);
     avviaAutoSync();
   } else {
-    fermaListenerBackupCloud();
     fermaAutoSync();
     loginInfo.textContent   = 'Non connesso';
     btnLogin.style.display  = 'inline-block';
     btnLogout.style.display = 'none';
     btnCom.style.display    = 'none';
+    // Aggiorna lista locale anche senza login
+    await aggiornaListaCustom();
   }
 });
 
@@ -823,15 +781,12 @@ document.getElementById('btn-logout').addEventListener('click', async () => {
   await signOut(auth);
 });
 
-window.addEventListener('online', async () => {
-  if (_currentUser) await sincronizzaDaCloud(true);
-});
+// Sync quando si torna online
+window.addEventListener('online', () => sync(true));
 
-// Sync quando l'app torna in foreground (es. si riapre il tab/app)
-document.addEventListener('visibilitychange', async () => {
-  if (document.visibilityState === 'visible' && _currentUser) {
-    await sincronizzaDaCloud(true);
-  }
+// Sync quando il tab torna visibile
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') sync(true);
 });
 
 // ═══════════════════════════════════════════════════════
@@ -853,7 +808,7 @@ async function caricaCommunity() {
   status.textContent = 'Caricamento...';
   grid.innerHTML = '';
   try {
-    const q = query(collection(db, 'community'), orderBy('likes', 'desc'), limit(100));
+    const q    = query(collection(db, 'community'), orderBy('likes', 'desc'), limit(100));
     const snap = await getDocs(q);
     _communityCards = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     status.textContent = _communityCards.length > 0 ? '' : 'Nessuna carta ancora. Sii il primo a condividere!';
@@ -864,17 +819,17 @@ async function caricaCommunity() {
 }
 
 function renderCommunity(cards) {
-  const grid = document.getElementById('community-grid');
+  const grid    = document.getElementById('community-grid');
   grid.innerHTML = '';
   if (!cards.length) return;
   const isAdmin = _currentUser && _currentUser.uid === ADMIN_UID;
   cards.forEach(carta => {
     const isOwner = _currentUser && carta.uid === _currentUser.uid;
-    const wrap = document.createElement('div');
+    const wrap    = document.createElement('div');
     wrap.className = 'community-card';
 
-    const img = document.createElement('img');
-    img.src = carta.img; img.title = carta.testo || '';
+    const img   = document.createElement('img');
+    img.src     = carta.img; img.title = carta.testo || '';
 
     const testo = document.createElement('div');
     testo.className = 'c-testo'; testo.textContent = carta.testo || '';
@@ -883,8 +838,8 @@ function renderCommunity(cards) {
     likes.className = 'c-likes'; likes.id = 'likes-' + carta.id;
     likes.textContent = '❤️ ' + (carta.likes || 0);
 
-    const btns = document.createElement('div');
-    btns.className = 'c-btns';
+    const btns      = document.createElement('div');
+    btns.className  = 'c-btns';
 
     const btnImport = document.createElement('button');
     btnImport.className = 'c-import'; btnImport.textContent = '⬇';
@@ -928,30 +883,31 @@ document.getElementById('community-search').addEventListener('input', () => {
 });
 
 async function importaDaCommunity(carta) {
-  let esistente = await localforage.getItem(CUSTOM_KEY) || [];
-  const testoNorm = (carta.testo || '').toUpperCase().trim();
-  const duplicata = esistente.some(c =>
-    c.shash === carta.shash ||
+  let mazzo = await localforage.getItem(CUSTOM_KEY) || [];
+
+  // Assicura shash sulla carta community
+  const cartaConShash = await garantisciShash(carta);
+  const testoNorm     = (cartaConShash.testo || '').toUpperCase().trim();
+
+  const duplicata = mazzo.some(c =>
+    (c.shash && cartaConShash.shash && c.shash === cartaConShash.shash) ||
     (testoNorm && (c.testo || '').toUpperCase().trim() === testoNorm)
   );
-  if (duplicata) {
-    await customAlert('Questa carta è già nel tuo mazzo.');
-    return;
-  }
+  if (duplicata) { await customAlert('Questa carta è già nel tuo mazzo.'); return; }
 
-  // Aggiunge carta e segna _inModifica = false
-  const nuovaCarta = { ...carta, estratta: false, _inModifica: false };
-  esistente.push(nuovaCarta);
+  const nuovaCarta = {
+    ...cartaConShash,
+    estratta: false,
+    _inModifica: false,
+    savedAt: Date.now()
+  };
+  mazzo.push(nuovaCarta);
 
-  // Aggiorna locale e lista
-  await localforage.setItem(CUSTOM_KEY, esistente);
+  await localforage.setItem(CUSTOM_KEY, mazzo);
   await aggiornaListaCustom();
 
-  // Backup immediato
-  await backupCloud(esistente);
-
-  // Sincronizza subito da cloud → locale
-  await sincronizzaDaCloud(true);
+  // Sync immediato: porta la carta anche sul backup cloud
+  await sync(true);
 
   await customAlert('Carta importata nel mazzo!');
 }
@@ -969,12 +925,12 @@ async function eliminaCartaCommunity(id) {
   if (!await customConfirm({ message: 'Eliminare questa carta dalla community?', okText: 'SI', cancelText: 'NO' })) return;
   try {
     await deleteDoc(doc(db, 'community', id));
-    const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
+    const mazzo    = await localforage.getItem(CUSTOM_KEY) || [];
     let aggiornato = false;
     mazzo.forEach(c => { if (c.communityId === id) { c.communityId = null; aggiornato = true; } });
     if (aggiornato) {
       await localforage.setItem(CUSTOM_KEY, mazzo);
-      await backupCloud(mazzo);
+      await sync(true);
       await aggiornaListaCustom();
     }
     _communityCards = _communityCards.filter(c => c.id !== id);
@@ -987,7 +943,6 @@ async function condividiInCommunity(carta) {
   try {
     const imgCloud = await comprimiImgPerCloud(carta.img);
 
-    // UPDATE: carta già condivisa in precedenza
     if (carta.communityId) {
       await updateDoc(doc(db, 'community', carta.communityId), {
         testo: carta.testo || '', img: imgCloud,
@@ -999,24 +954,24 @@ async function condividiInCommunity(carta) {
       return;
     }
 
-    // CREATE: prima condivisione
     if (_communityCards.some(c => c.shash === carta.shash)) {
       await customAlert('Questa carta è già presente nella community.'); return;
     }
+
     const ref = await addDoc(collection(db, 'community'), {
       testo: carta.testo || '', img: imgCloud, shash: carta.shash || '',
       nome: carta.nome || '', autore: _currentUser.displayName || _currentUser.email,
       uid: _currentUser.uid, likes: 0, data: new Date().toISOString()
     });
 
-    // Salva communityId nel mazzo locale e sul cloud
-    const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
+    // Salva communityId nel mazzo locale
+    const mazzo       = await localforage.getItem(CUSTOM_KEY) || [];
     const cartaLocale = mazzo.find(c => c.shash === carta.shash);
     if (cartaLocale) {
       cartaLocale.communityId = ref.id;
-      carta.communityId = ref.id;
+      carta.communityId       = ref.id;
       await localforage.setItem(CUSTOM_KEY, mazzo);
-      await backupCloud(mazzo);
+      await sync(true);
     }
     await customAlert('Carta condivisa con la community! 🎉');
   } catch(e) { await customAlert('Errore condivisione:\n' + e.message); }
@@ -1076,14 +1031,8 @@ document.getElementById('inp-carta').addEventListener('change', event => {
 // ═══════════════════════════════════════════════════════
 // UTILITY PNG
 // ═══════════════════════════════════════════════════════
-async function sha256String(str) {
-  const buf = new TextEncoder().encode(str);
-  const digest = await crypto.subtle.digest('SHA-256', buf);
-  return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2,'0')).join('');
-}
-
 function injectPngTextChunk(arrayBuffer, keyword, text) {
-  const encoder = new TextEncoder();
+  const encoder  = new TextEncoder();
   const keyBytes = encoder.encode(keyword);
   const textBytes = encoder.encode(text);
   const chunkData = new Uint8Array(keyBytes.length + 1 + textBytes.length);
@@ -1100,24 +1049,24 @@ function injectPngTextChunk(arrayBuffer, keyword, text) {
     for (let i = 0; i < buf.length; i++) crc = table[(crc ^ buf[i]) & 0xFF] ^ (crc >>> 8);
     return (crc ^ 0xFFFFFFFF) >>> 0;
   }
-  const type = encoder.encode('tEXt');
+  const type      = encoder.encode('tEXt');
   const fullChunk = new Uint8Array(type.length + chunkData.length);
   fullChunk.set(type); fullChunk.set(chunkData, type.length);
-  const crc = crc32(fullChunk);
+  const crc   = crc32(fullChunk);
   const chunk = new Uint8Array(12 + chunkData.length);
-  const dv = new DataView(chunk.buffer);
+  const dv    = new DataView(chunk.buffer);
   dv.setUint32(0, chunkData.length); chunk.set(type, 4); chunk.set(chunkData, 8);
   dv.setUint32(8 + chunkData.length, crc);
-  const src = new Uint8Array(arrayBuffer);
+  const src    = new Uint8Array(arrayBuffer);
   const result = new Uint8Array(src.length + chunk.length);
   result.set(src.slice(0, 33)); result.set(chunk, 33); result.set(src.slice(33), 33 + chunk.length);
   return result.buffer;
 }
 
 function arrayBufferToBase64(buffer) {
-  const bytes = new Uint8Array(buffer);
-  let binary = '';
-  const chunk = 8192;
+  const bytes  = new Uint8Array(buffer);
+  let binary   = '';
+  const chunk  = 8192;
   for (let i = 0; i < bytes.length; i += chunk)
     binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
   return btoa(binary);
@@ -1134,7 +1083,7 @@ async function generaCanvas() {
 // SALVA FILE (download / directory picker)
 // ═══════════════════════════════════════════════════════
 async function salvaFile(dataUrl, filename) {
-  const res = await fetch(dataUrl);
+  const res  = await fetch(dataUrl);
   const blob = await res.blob();
   if (window.showDirectoryPicker) {
     try {
@@ -1152,7 +1101,7 @@ async function salvaFile(dataUrl, filename) {
       } catch { _cartellaHandle = null; }
     }
   }
-  const url = URL.createObjectURL(blob);
+  const url  = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.download = filename; link.href = url; link.click();
   URL.revokeObjectURL(url);
@@ -1192,8 +1141,8 @@ document.getElementById('btn-salva').addEventListener('click', async () => {
   try {
     const testo = document.getElementById('inp-body').value.trim();
     if (!testo) { await customAlert('Scrivi prima il testo della carta.'); return; }
-    const shash  = await sha256String(testo.toUpperCase());
-    const canvas = await generaCanvas();
+    const shash   = await sha256String(testo.toUpperCase());
+    const canvas  = await generaCanvas();
     const dataUrl = canvas.toDataURL('image/png');
     const rawBuf  = await (await fetch(dataUrl)).arrayBuffer();
     const pngBuf  = injectPngTextChunk(rawBuf, 'porky_shash', shash);
@@ -1205,10 +1154,9 @@ document.getElementById('btn-salva').addEventListener('click', async () => {
     }
 
     const cartaInModifica = esistente.find(c => c._inModifica);
-    const nome        = cartaInModifica ? cartaInModifica.nome : 'carta_custom_' + shash.slice(0, 8) + '.png';
-    const communityId = cartaInModifica ? (cartaInModifica.communityId || null) : null;
-    // Se il testo è cambiato, il vecchio shash va nei tombstone
-    const vecchioShash = (cartaInModifica && cartaInModifica.shash !== shash)
+    const nome            = cartaInModifica ? cartaInModifica.nome : 'carta_custom_' + shash.slice(0, 8) + '.png';
+    const communityId     = cartaInModifica ? (cartaInModifica.communityId || null) : null;
+    const vecchioShash    = (cartaInModifica && cartaInModifica.shash !== shash)
       ? cartaInModifica.shash : null;
 
     const carta = {
@@ -1223,12 +1171,11 @@ document.getElementById('btn-salva').addEventListener('click', async () => {
     await localforage.setItem(CUSTOM_KEY, mazzoFinale);
     await aggiornaListaCustom();
 
-    // Aggiorna tombstones se c’era vecchio shash
-    const tombstones = vecchioShash ? { [vecchioShash]: Date.now() } : {};
-    await backupCloud(mazzoFinale, vecchioShash ? [vecchioShash] : []);
+    // Se il testo è cambiato, il vecchio shash diventa tombstone
+    if (vecchioShash) await aggiungiTombstone(vecchioShash);
 
-    // Forza la sincronizzazione subito dopo il backup, così la carta arriva anche sugli altri dispositivi
-    await sincronizzaDaCloud(true);
+    // Sync: porta la carta nuova sul cloud e scarica eventuali aggiornamenti
+    await sync(true);
 
     // Se la carta era condivisa in community, aggiorna automaticamente anche lì
     if (communityId) await condividiInCommunity(carta);
@@ -1264,19 +1211,19 @@ async function aggiornaListaCustom() {
     const wrap = document.createElement('div');
     wrap.className = 'card-item';
 
-    const img = document.createElement('img');
-    img.src = carta.img;
-    img.title = carta.testo || carta.nome;
+    const img   = document.createElement('img');
+    img.src     = carta.img;
+    img.title   = carta.testo || carta.nome;
     img.style.cursor = 'pointer';
     img.onclick = () => modificaCarta(idx);
 
     if (carta._inModifica) {
       wrap.style.opacity = '0.6';
-      img.style.border = '2px solid #f0c040';
-      img.title = '(in modifica) ' + (carta.testo || carta.nome);
+      img.style.border   = '2px solid #f0c040';
+      img.title          = '(in modifica) ' + (carta.testo || carta.nome);
     }
 
-    const btns = document.createElement('div');
+    const btns   = document.createElement('div');
     btns.className = 'card-item-btns';
 
     const btnMod = document.createElement('button');
@@ -1324,53 +1271,6 @@ async function modificaCarta(idx) {
   document.getElementById('preview-share-wrap').style.display = 'block';
 }
 
-// ── Listener realtime: propaga modifiche cloud → locale immediatamente ──
-let _unsubscribeSnapshot = null;
-
-function avviaListenerBackupCloud() {
-  if (!_currentUser) return;
-  if (_unsubscribeSnapshot) { _unsubscribeSnapshot(); _unsubscribeSnapshot = null; }
-
-  const ref = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo');
-
-  _unsubscribeSnapshot = onSnapshot(ref, async (snap) => {
-    if (!snap.exists()) return;
-
-    const data = snap.data();
-    const mazzoCloud = data.carte || [];
-    const cloudTombstones = data.tombstones || {};
-
-    // Merge tombstone: vince il timestamp più alto (non spread semplice)
-    const localTombstones = await getTombstones();
-    const tombstonesAggiornati = { ...localTombstones };
-    for (const [s, ts] of Object.entries(cloudTombstones)) {
-      if (!tombstonesAggiornati[s] || ts > tombstonesAggiornati[s]) tombstonesAggiornati[s] = ts;
-    }
-    await setTombstones(purgaTombstones(tombstonesAggiornati));
-
-    // Mazzo locale corrente
-    let mazzoLocale = await localforage.getItem(CUSTOM_KEY) || [];
-
-    // Rimuovi carte cancellate (nei tombstone)
-    mazzoLocale = mazzoLocale.filter(c => !c.shash || !tombstonesAggiornati[c.shash]);
-
-    // Aggiungi carte nuove dal cloud non presenti in locale e non cancellate
-    const shashLocale = new Set(mazzoLocale.map(c => c.shash).filter(Boolean));
-    const nuoveCarte = mazzoCloud.filter(c =>
-      c.shash && !shashLocale.has(c.shash) && !tombstonesAggiornati[c.shash]
-    );
-    if (nuoveCarte.length) mazzoLocale = [...mazzoLocale, ...nuoveCarte];
-
-    await localforage.setItem(CUSTOM_KEY, mazzoLocale);
-    await aggiornaListaCustom();
-  });
-}
-
-function fermaListenerBackupCloud() {
-  if (_unsubscribeSnapshot) { _unsubscribeSnapshot(); _unsubscribeSnapshot = null; }
-}
-
-// ── Funzione eliminaCarta aggiornata ──
 async function eliminaCarta(idx) {
   const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
   const carta = mazzo[idx];
@@ -1381,38 +1281,31 @@ async function eliminaCarta(idx) {
     okText: 'SI', cancelText: 'NO'
   })) return;
 
-  // Rimuove la carta dal mazzo locale
+  // Rimuovi dal locale
   mazzo.splice(idx, 1);
   await localforage.setItem(CUSTOM_KEY, mazzo);
   await aggiornaListaCustom();
 
-  // Aggiorna i tombstones locali
-  const tombstones = await getTombstones();
-  if (carta.shash) {
-    tombstones[carta.shash] = Date.now();
-    await setTombstones(tombstones);
-  }
+  // Tombstone immediato: propaga la cancellazione subito su cloud
+  // così gli altri dispositivi la vedono al prossimo sync
+  if (carta.shash) await aggiungiTombstone(carta.shash);
 
-  if (navigator.onLine) {
-    await backupCloud(mazzo, carta.shash ? [carta.shash] : []);
-    await sincronizzaDaCloud(true);
-  } else {
-    window.addEventListener('online', async function onOnline() {
-      window.removeEventListener('online', onOnline);
-      await backupCloud(mazzo, carta.shash ? [carta.shash] : []);
-      await sincronizzaDaCloud(true);
-    }, { once: true });
-  }
+  // Sync completo: aggiorna cloud con il mazzo corrente
+  await sync(true);
 }
 
 document.getElementById('btn-cancella-tutto').addEventListener('click', async () => {
   if (!await customConfirm({ message: 'Cancellare tutto il mazzo personalizzato?', okText: 'SI', cancelText: 'NO' })) return;
   const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
-  const shashes = mazzo.map(c => c.shash).filter(Boolean);
+
+  // Tombstone per ogni carta
+  for (const carta of mazzo) {
+    if (carta.shash) await aggiungiTombstone(carta.shash);
+  }
+
   await localforage.removeItem(CUSTOM_KEY);
   await aggiornaListaCustom();
-  await backupCloud([], shashes);
-  await sincronizzaDaCloud(true);
+  await sync(true);
 });
 
 document.getElementById('cerca-mazzo').addEventListener('input', () => {
@@ -1433,7 +1326,7 @@ document.getElementById('btn-esporta-backup').addEventListener('click', async ()
     try { _cartellaHandle = await window.showDirectoryPicker({ mode: 'readwrite' }); }
     catch { _cartellaHandle = null; }
   }
-  const blob = new Blob([JSON.stringify(mazzo, null, 2)], { type: 'application/json' });
+  const blob     = new Blob([JSON.stringify(mazzo, null, 2)], { type: 'application/json' });
   const filename = 'mazzo_custom_backup.json';
   if (_cartellaHandle) {
     try {
@@ -1443,7 +1336,7 @@ document.getElementById('btn-esporta-backup').addEventListener('click', async ()
     } catch { _cartellaHandle = null; }
   }
   if (!_cartellaHandle) {
-    const url = URL.createObjectURL(blob);
+    const url  = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url; link.download = filename; link.click();
     URL.revokeObjectURL(url);
@@ -1459,7 +1352,7 @@ document.getElementById('btn-esporta-backup').addEventListener('click', async ()
           await wr.write(pngBlob); await wr.close();
         } catch { /* ignora */ }
       } else {
-        const url = URL.createObjectURL(pngBlob);
+        const url  = URL.createObjectURL(pngBlob);
         const link = document.createElement('a');
         link.href = url; link.download = carta.nome; link.click();
         URL.revokeObjectURL(url);
@@ -1481,9 +1374,13 @@ document.getElementById('inp-backup').addEventListener('change', async event => 
   try {
     const dati = JSON.parse(await file.text());
     if (!Array.isArray(dati)) { await customAlert('File non valido.'); return; }
-    // Assicura che ogni carta abbia savedAt (per il merge bidirezionale)
-    const now = Date.now();
-    dati.forEach(c => { if (!c.savedAt) c.savedAt = now; });
+
+    // Assicura savedAt e shash su ogni carta importata
+    const now         = Date.now();
+    const datiSanati  = await Promise.all(
+      dati.map(async c => await garantisciShash({ ...c, savedAt: c.savedAt || now }))
+    );
+
     const esistente = await localforage.getItem(CUSTOM_KEY) || [];
     if (esistente.length > 0) {
       const scelta = await customConfirm({
@@ -1491,46 +1388,30 @@ document.getElementById('inp-backup').addEventListener('change', async event => 
         okText: 'Sostituisci', cancelText: 'Unisci'
       });
       if (scelta) {
-        const visti = new Map();
-        for (const c of dati) {
-          const key = c.shash || (c.testo || '').toUpperCase().trim() || c.nome;
-          if (key && !visti.has(key)) visti.set(key, c);
-        }
-        await localforage.setItem(CUSTOM_KEY, [...visti.values()]);
-      } else {
-        const shashSet = new Set(esistente.map(c => c.shash).filter(Boolean));
-        const testiSet = new Set(esistente.map(c => (c.testo || '').toUpperCase().trim()).filter(Boolean));
-        const nuove = dati.filter(c => {
-          if (c.shash && shashSet.has(c.shash)) return false;
-          const tn = (c.testo || '').toUpperCase().trim();
-          if (tn && testiSet.has(tn)) return false;
-          return true;
-        });
-        await localforage.setItem(CUSTOM_KEY, [...esistente, ...nuove]);
-        await customAlert('Importate ' + nuove.length + ' carte nuove, ' + (dati.length - nuove.length) + ' duplicate ignorate.');
+        // Sostituisci: usa merge senza locale, solo backup (deduplicato)
+        const mazzoFinale = await mergeMazzi({ locale: datiSanati, cloud: [], deleted: {} });
+        await localforage.setItem(CUSTOM_KEY, mazzoFinale);
         await aggiornaListaCustom();
-        await backupCloud(await localforage.getItem(CUSTOM_KEY));
-        await sincronizzaDaCloud(true);
-        return;
+        await sync(true);
+        await customAlert('Mazzo sostituito: ' + mazzoFinale.length + ' carte importate.');
+      } else {
+        // Unisci: merge backup con locale esistente
+        const mazzoFinale = await mergeMazzi({ locale: [...esistente, ...datiSanati], cloud: [], deleted: {} });
+        const nuove       = mazzoFinale.length - esistente.length;
+        await localforage.setItem(CUSTOM_KEY, mazzoFinale);
+        await aggiornaListaCustom();
+        await sync(true);
+        await customAlert('Importate ' + nuove + ' carte nuove, ' + (datiSanati.length - nuove) + ' duplicate ignorate.');
       }
     } else {
-      await localforage.setItem(CUSTOM_KEY, dati);
+      const mazzoFinale = await mergeMazzi({ locale: datiSanati, cloud: [], deleted: {} });
+      await localforage.setItem(CUSTOM_KEY, mazzoFinale);
+      await aggiornaListaCustom();
+      await sync(true);
+      await customAlert('Backup importato: ' + mazzoFinale.length + ' carte.');
     }
-    await aggiornaListaCustom();
-    await customAlert('Backup importato: ' + dati.length + ' carte.');
   } catch(e) { await customAlert('Errore importazione:\n' + e.message); }
 });
-
-// ═══════════════════════════════════════════════════════
-// RIPRISTINO AUTOMATICO
-// ═══════════════════════════════════════════════════════
-async function tentaRipristinoAutomatico() {
-  const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
-  if (mazzo.length > 0) return;
-  if (await customConfirm({ message: 'Il mazzo è vuoto.\nVuoi importare un Backup Mazzo?', okText: 'SI', cancelText: 'NO' })) {
-    document.getElementById('inp-backup').click();
-  }
-}
 
 // ═══════════════════════════════════════════════════════
 // OVERLAY ISTRUZIONI E PRIVACY
@@ -1543,8 +1424,8 @@ async function tentaRipristinoAutomatico() {
   document.getElementById('privacyClose').addEventListener('click',   () => { privacyOverlay.style.display = 'none'; });
   privacyOverlay.addEventListener('click', e => { if (e.target === privacyOverlay) privacyOverlay.style.display = 'none'; });
 
-  document.getElementById('infoHelpBtn').addEventListener('click',      () => { istruzioniOverlay.style.display = 'flex'; });
-  document.getElementById('istruzioniClose').addEventListener('click',  () => { istruzioniOverlay.style.display = 'none'; });
+  document.getElementById('infoHelpBtn').addEventListener('click',     () => { istruzioniOverlay.style.display = 'flex'; });
+  document.getElementById('istruzioniClose').addEventListener('click', () => { istruzioniOverlay.style.display = 'none'; });
   istruzioniOverlay.addEventListener('click', e => { if (e.target === istruzioniOverlay) istruzioniOverlay.style.display = 'none'; });
 
   document.addEventListener('keydown', e => {
@@ -1554,7 +1435,7 @@ async function tentaRipristinoAutomatico() {
     }
   });
 
-  const ora = Date.now();
+  const ora          = Date.now();
   const ultimaVisita = parseInt(localStorage.getItem('porky_last_visit') || '0');
   if (!ultimaVisita || (ora - ultimaVisita) > 24 * 60 * 60 * 1000) {
     setTimeout(() => { istruzioniOverlay.style.display = 'flex'; }, 300);
@@ -1580,11 +1461,18 @@ window.addEventListener('load', async () => {
     xhr.onerror = () => resolve();
     xhr.send();
   });
-  // Se l'utente non è loggato, rendiamo subito il mazzo locale.
-  // Se è loggato, onAuthStateChanged gestisce sync + render + ripristino.
+
+  // Se non loggato: mostra subito il mazzo locale
+  // Se loggato: onAuthStateChanged gestisce sync + render
   if (!auth.currentUser) {
     await aggiornaListaCustom();
-    await tentaRipristinoAutomatico();
+    // Ripristino automatico solo se mazzo vuoto e non loggato
+    const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
+    if (mazzo.length === 0) {
+      if (await customConfirm({ message: 'Il mazzo è vuoto.\nVuoi importare un Backup Mazzo?', okText: 'SI', cancelText: 'NO' })) {
+        document.getElementById('inp-backup').click();
+      }
+    }
   }
 });
 
