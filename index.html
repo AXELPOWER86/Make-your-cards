@@ -729,12 +729,19 @@ async function aggiungiTombstone(shash) {
 }
 
 // ── Auto-sync ogni 60s ──
-function avviaAutoSync() {
-  fermaAutoSync();
+function avviaSync() {
+  fermaSync();
+  // Realtime: quando il documento cloud cambia → sync() immediato
+  _unsubscribe = onSnapshot(
+    doc(db, 'users', _currentUser.uid, 'backup', 'mazzo'),
+    () => sync(true)   // usa la stessa mergeMazzi() testata, nessuna logica separata
+  );
+  // Fallback periodico ogni 60s (per recuperare tombstone offline, visibilità, ecc.)
   _syncTimer = setInterval(() => sync(true), 60000);
 }
-function fermaAutoSync() {
-  if (_syncTimer) { clearInterval(_syncTimer); _syncTimer = null; }
+function fermaSync() {
+  if (_unsubscribe) { _unsubscribe(); _unsubscribe = null; }
+  if (_syncTimer)   { clearInterval(_syncTimer); _syncTimer = null; }
 }
 
 // ═══════════════════════════════════════════════════════
