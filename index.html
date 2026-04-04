@@ -490,7 +490,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebas
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
 import { getFirestore, doc, setDoc, getDoc, collection, getDocs,
-         addDoc, updateDoc, deleteDoc, increment, query, orderBy, limit, onSnapshot }
+         addDoc, updateDoc, deleteDoc, increment, arrayUnion, query, orderBy, limit, onSnapshot }
   from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -914,7 +914,7 @@ function renderCommunity(cards) {
     if (ua > ub) return 1;
     return (b.likes || 0) - (a.likes || 0); // dentro ogni utente: likes desc
   });
-  
+
   const isAdmin = _currentUser && _currentUser.uid === ADMIN_UID;
   sorted.forEach(carta => {
     const isOwner = _currentUser && carta.uid === _currentUser.uid;
@@ -1007,10 +1007,21 @@ async function importaDaCommunity(carta) {
 
 async function likeCarta(id) {
   if (!_currentUser) { await customAlert('Devi accedere con Google per mettere like.'); return; }
+  const carta = _communityCards.find(c => c.id === id);
+  if (carta && carta.likedBy && carta.likedBy.includes(_currentUser.uid)) {
+    await customAlert('Hai già messo like a questa carta.'); return;
+  }
   try {
-    await updateDoc(doc(db, 'community', id), { likes: increment(1) });
+    await updateDoc(doc(db, 'community', id), {
+      likes: increment(1),
+      likedBy: arrayUnion(_currentUser.uid)
+    });
     const el = document.getElementById('likes-' + id);
     if (el) el.textContent = '❤️ ' + (parseInt(el.textContent.replace('❤️ ', '')) + 1);
+    if (carta) {
+      if (!carta.likedBy) carta.likedBy = [];
+      carta.likedBy.push(_currentUser.uid);
+    }
   } catch(e) { await customAlert('Errore like:\n' + e.message); }
 }
 
@@ -1054,7 +1065,7 @@ async function condividiInCommunity(carta) {
     const ref = await addDoc(collection(db, 'community'), {
       testo: carta.testo || '', img: imgCloud, shash: carta.shash || '',
       nome: carta.nome || '', autore: _currentUser.displayName || _currentUser.email,
-      uid: _currentUser.uid, likes: 0, data: new Date().toISOString()
+      uid: _currentUser.uid, likes: 0, likedBy: [], data: new Date().toISOString()
     });
 
     // Salva communityId nel mazzo locale
