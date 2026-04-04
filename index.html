@@ -906,6 +906,15 @@ function renderCommunity(cards) {
   const grid    = document.getElementById('community-grid');
   grid.innerHTML = '';
   if (!cards.length) return;
+
+  // Raggruppa per utente mantenendo ordine likes dentro ogni gruppo
+  const sorted = [...cards].sort((a, b) => {
+    const ua = a.uid || ''; const ub = b.uid || '';
+    if (ua < ub) return -1;
+    if (ua > ub) return 1;
+    return (b.likes || 0) - (a.likes || 0); // dentro ogni utente: likes desc
+  });
+  
   const isAdmin = _currentUser && _currentUser.uid === ADMIN_UID;
   cards.forEach(carta => {
     const isOwner = _currentUser && carta.uid === _currentUser.uid;
