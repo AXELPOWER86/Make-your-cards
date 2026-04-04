@@ -1198,6 +1198,28 @@ document.getElementById('btn-salva').addEventListener('click', async () => {
     // Se il testo è cambiato, il vecchio shash diventa tombstone
     if (vecchioShash) await aggiungiTombstone(vecchioShash);
 
+    // Rimuovi lo shash della carta appena salvata dai tombstone locali e cloud:
+    // l'utente sta esplicitamente ri-creando una carta che era stata cancellata.
+    const localDel = JSON.parse(localStorage.getItem('porky_deleted') || '{}');
+    if (localDel[shash]) {
+      delete localDel[shash];
+      localStorage.setItem('porky_deleted', JSON.stringify(localDel));
+      // Aggiorna anche il cloud rimuovendo lo shash dai tombstone
+      if (_currentUser) {
+        try {
+          const ref2 = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo');
+          const snap2 = await getDoc(ref2);
+          if (snap2.exists()) {
+            const cloudDel = snap2.data().tombstones || {};
+            if (cloudDel[shash]) {
+              delete cloudDel[shash];
+              await setDoc(ref2, { tombstones: cloudDel, aggiornato: Date.now() }, { merge: true });
+            }
+          }
+        } catch(_) { /* non critico */ }
+      }
+    }
+
     // Sync: porta la carta nuova sul cloud e scarica eventuali aggiornamenti
     await sync(true);
 
