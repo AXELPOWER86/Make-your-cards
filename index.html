@@ -991,9 +991,9 @@ async function condividiInCommunity(carta) {
       cartaLocale.communityId = ref.id;
       carta.communityId       = ref.id;
       await localforage.setItem(CUSTOM_KEY, mazzo);
-      await sync(true);
     }
     await customAlert('Carta condivisa con la community! 🎉');
+    sync(true); // senza await: non blocca l'alert
   } catch(e) { await customAlert('Errore condivisione:\n' + e.message); }
 }
 
