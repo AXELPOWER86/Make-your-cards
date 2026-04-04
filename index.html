@@ -256,10 +256,63 @@ input[type="file"] { display: none; }
   text-align: center; font-size: 18px; color: #502369;
   display: flex; flex-direction: column; align-items: center; gap: 12px;
 }
+/* ── DISCLAIMER ── */
+#disclaimerOverlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.88);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 50000; padding: 18px;
+}
+#disclaimerBox {
+  background: #f9e0a7; border: 4px solid #502369; border-radius: 14px;
+  padding: 30px 24px; max-width: 480px; width: 100%;
+  text-align: center; display: flex; flex-direction: column;
+  align-items: center; gap: 16px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.5);
+}
+#disclaimerIcon { font-size: 52px; line-height: 1; }
+#disclaimerTitle {
+  font-size: 20px; font-weight: 900; color: #8b0000;
+  border-bottom: 2px solid #502369; padding-bottom: 10px; width: 100%;
+}
+#disclaimerText {
+  font-size: 15px; color: #502369; font-weight: 700; line-height: 1.6;
+}
+#disclaimerBtns {
+  display: flex; gap: 14px; flex-wrap: wrap; justify-content: center;
+  width: 100%; margin-top: 4px;
+}
+#disclaimerBtns button {
+  font-family: 'Carlito', Arial, sans-serif; font-weight: 900;
+  font-size: 15px; padding: 12px 22px; border: none;
+  border-radius: 10px; cursor: pointer; flex: 1; min-width: 140px;
+  box-shadow: 0 4px 12px rgba(0,0,0,.2); transition: transform .1s;
+}
+#disclaimerBtns button:active { transform: scale(0.96); }
+#disclaimerSi {
+  background: linear-gradient(145deg, #2ecc71, #1a8a47); color: #fff;
+}
+#disclaimerNo {
+  background: linear-gradient(145deg, #c0392b, #7b0000); color: #fff;
+}
 </style>
 </head>
 <body>
-
+<!-- ═══ DISCLAIMER ADULTI ═══ -->
+<div id="disclaimerOverlay">
+  <div id="disclaimerBox">
+    <div id="disclaimerIcon">🔞</div>
+    <div id="disclaimerTitle">Accesso vietato ai minori di 18 anni!</div>
+    <div id="disclaimerText">
+      Questa pagina potrebbe contenere frasi sessualmente esplicite.<br><br>
+      Dichiari di avere almeno <strong>18 anni</strong> e di non essere suscettibile a tali argomenti?
+    </div>
+    <div id="disclaimerBtns">
+      <button id="disclaimerSi">✅ Sì, ho 18+ anni</button>
+      <button id="disclaimerNo">❌ No, esci</button>
+    </div>
+  </div>
+</div>
 <h1>Porky's Game® - Editor Carte</h1>
 <p class="description">Crea le tue carte personalizzate per il mazzo</p>
 
@@ -1439,7 +1492,53 @@ document.getElementById('inp-backup').addEventListener('change', async event => 
 (function() {
   const privacyOverlay    = document.getElementById('privacyOverlay');
   const istruzioniOverlay = document.getElementById('istruzioniOverlay');
+  const disclaimerOverlay = document.getElementById('disclaimerOverlay');
 
+  // ── DISCLAIMER ──
+  const DISCLAIMER_KEY = 'porky_age_ok';
+
+  function mostraDisclaimer() {
+    disclaimerOverlay.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+  }
+  function accettaDisclaimer() {
+    sessionStorage.setItem(DISCLAIMER_KEY, '1');
+    disclaimerOverlay.style.display = 'none';
+    document.body.style.overflow = '';
+    // Se prima visita del giorno → apri le istruzioni
+    const ora          = Date.now();
+    const ultimaVisita = parseInt(localStorage.getItem('porky_last_visit') || '0');
+    if (!ultimaVisita || (ora - ultimaVisita) > 24 * 60 * 60 * 1000) {
+      setTimeout(() => { istruzioniOverlay.style.display = 'flex'; }, 300);
+    }
+    localStorage.setItem('porky_last_visit', ora);
+  }
+  function rifiutaDisclaimer() {
+    disclaimerOverlay.innerHTML =
+      '<div style="color:#fff;text-align:center;font-size:18px;font-weight:bold;padding:40px;">' +
+      '🔞 Accesso negato.<br><br>Questa pagina non è accessibile.</div>';
+    disclaimerOverlay.style.background = 'rgba(0,0,0,0.97)';
+    document.body.style.overflow = 'hidden';
+  }
+
+  document.getElementById('disclaimerSi').addEventListener('click', accettaDisclaimer);
+  document.getElementById('disclaimerNo').addEventListener('click', rifiutaDisclaimer);
+
+  // Controlla se già accettato in questa sessione
+  if (sessionStorage.getItem(DISCLAIMER_KEY) === '1') {
+    disclaimerOverlay.style.display = 'none';
+    // Logica prima visita (normale flow)
+    const ora          = Date.now();
+    const ultimaVisita = parseInt(localStorage.getItem('porky_last_visit') || '0');
+    if (!ultimaVisita || (ora - ultimaVisita) > 24 * 60 * 60 * 1000) {
+      setTimeout(() => { istruzioniOverlay.style.display = 'flex'; }, 300);
+    }
+    localStorage.setItem('porky_last_visit', ora);
+  } else {
+    mostraDisclaimer();
+  }
+
+  // ── OVERLAY ISTRUZIONI E PRIVACY (invariati) ──
   document.getElementById('infoPrivacyBtn').addEventListener('click', () => { privacyOverlay.style.display = 'flex'; });
   document.getElementById('privacyClose').addEventListener('click',   () => { privacyOverlay.style.display = 'none'; });
   privacyOverlay.addEventListener('click', e => { if (e.target === privacyOverlay) privacyOverlay.style.display = 'none'; });
@@ -1454,13 +1553,6 @@ document.getElementById('inp-backup').addEventListener('change', async event => 
       else if (privacyOverlay.style.display === 'flex') privacyOverlay.style.display = 'none';
     }
   });
-
-  const ora          = Date.now();
-  const ultimaVisita = parseInt(localStorage.getItem('porky_last_visit') || '0');
-  if (!ultimaVisita || (ora - ultimaVisita) > 24 * 60 * 60 * 1000) {
-    setTimeout(() => { istruzioniOverlay.style.display = 'flex'; }, 300);
-  }
-  localStorage.setItem('porky_last_visit', ora);
 })();
 
 // ═══════════════════════════════════════════════════════
