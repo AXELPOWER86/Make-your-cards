@@ -916,7 +916,7 @@ function renderCommunity(cards) {
   });
   
   const isAdmin = _currentUser && _currentUser.uid === ADMIN_UID;
-  cards.forEach(carta => {
+  sorted.forEach(carta => {
     const isOwner = _currentUser && carta.uid === _currentUser.uid;
     const wrap    = document.createElement('div');
     wrap.className = 'community-card';
