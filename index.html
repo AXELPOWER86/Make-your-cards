@@ -643,73 +643,65 @@ async function mergeMazzi({ locale, cloud, deleted }) {
 }
 
 // ═══════════════════════════════════════════════════════
-// SYNC: sincronizzazione cloud ↔ locale
+// SYNC: unico punto di sincronizzazione cloud ↔ locale
 //
-// Responsabilità SEPARATA dal salvataggio:
-//  - Chi salva/elimina aggiorna PRIMA il locale, poi chiama sync()
-//  - sync() NON sovrascrive il locale con il merge
-//    (farebbe sparire le carte appena salvate se cloud è ancora vecchio)
-//  - sync() fa solo:
-//      1. Legge cloud
-//      2. Porta in locale le carte NUOVE da altri dispositivi (pull)
-//      3. Scrive cloud con locale aggiornato (push)
-//  - I tombstone eliminano carte: sia in locale che in cloud
+// Flusso:
+//  1. Leggi locale
+//  2. Leggi cloud (se online e loggato)
+//  3. Merge bidirezionale
+//  4. Salva risultato in locale
+//  5. Scrivi risultato su cloud (img compresse)
 // ═══════════════════════════════════════════════════════
 async function sync(silenzioso = true) {
   if (!_currentUser) return;
-  if (_syncBusy) return;
+  if (_syncBusy) return; // evita sync concorrenti
   _syncBusy = true;
 
   try {
-    const ref = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo');
-    const now = Date.now();
+    const ref    = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo');
+    const now    = Date.now();
 
-    // Leggi locale corrente (fonte di verità per questo dispositivo)
+    // Leggi locale (assicura savedAt su tutte le carte)
     let locale = (await localforage.getItem(CUSTOM_KEY) || []).map(c => ({
       ...c, savedAt: c.savedAt || now
     }));
 
-    // Tombstone locali
-    const localDeleted = JSON.parse(localStorage.getItem('porky_deleted') || '{}');
-
     // Leggi cloud
     let cloudCarte   = [];
     let cloudDeleted = {};
+    let cloudEsiste  = false;
     try {
       const snap = await getDoc(ref);
       if (snap.exists()) {
         const data   = snap.data();
         cloudCarte   = data.carte      || [];
         cloudDeleted = data.tombstones || {};
+        cloudEsiste  = true;
       }
     } catch (_) { /* offline: usa solo locale */ }
 
-    // Unisci tombstone locali + cloud
+    // Unisci tombstone locali + cloud, purga TTL
+    const localDeleted = JSON.parse(localStorage.getItem('porky_deleted') || '{}');
     const deleted = purgaTombstones({ ...cloudDeleted, ...localDeleted });
     localStorage.setItem('porky_deleted', JSON.stringify(deleted));
 
-    // Applica tombstone al locale: rimuovi carte cancellate da altri dispositivi
-    const localePulito = locale.filter(c => !c.shash || !deleted[c.shash]);
-    const localeModificato = localePulito.length !== locale.length;
-
-    // Trova carte nuove nel cloud che non esistono in locale
-    // (aggiunte da un altro dispositivo)
-    const shashLocale = new Set(localePulito.map(c => c.shash).filter(Boolean));
-    const carteNuoveDaCloud = cloudCarte.filter(c =>
-      c.shash && !shashLocale.has(c.shash) && !deleted[c.shash]
-    );
-
-    // Aggiorna locale SOLO se ci sono carte nuove dal cloud o tombstone da applicare
-    const mazzoFinale = carteNuoveDaCloud.length > 0 || localeModificato
-      ? [...localePulito, ...carteNuoveDaCloud]
-      : localePulito;
-
-    if (carteNuoveDaCloud.length > 0 || localeModificato) {
-      await localforage.setItem(CUSTOM_KEY, mazzoFinale);
-      await aggiornaListaCustom();
+    // Merge — ma solo se il cloud esiste davvero.
+    // Se cloud è vuoto (documento non ancora creato o carte=[]),
+    // non sovrascriviamo il locale: il locale è la fonte di verità.
+    // Applichiamo comunque i tombstone locali.
+    let mazzoFinale;
+    if (!cloudEsiste || cloudCarte.length === 0) {
+      // Nessun dato cloud: applica solo tombstone locali al locale
+      mazzoFinale = locale.filter(c => !c.shash || !deleted[c.shash]);
+    } else {
+      mazzoFinale = await mergeMazzi({ locale, cloud: cloudCarte, deleted });
     }
 
-    // Scrivi cloud con il mazzo finale (locale + nuove da cloud, senza cancellate)
+    // Salva locale
+    await localforage.setItem(CUSTOM_KEY, mazzoFinale);
+    await aggiornaListaCustom();
+
+    // Scrivi cloud (img compresse)
     const carteCloud = await Promise.all(
       mazzoFinale.map(async c => {
         const { _inModifica, ...rest } = c;
