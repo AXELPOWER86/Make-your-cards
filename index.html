@@ -1195,7 +1195,7 @@ document.getElementById('btn-salva').addEventListener('click', async () => {
     if (vecchioShash) await aggiungiTombstone(vecchioShash);
 
     // Sync: porta la carta nuova sul cloud e scarica eventuali aggiornamenti
-    await sync(true);
+    sync(true);
 
     // Se la carta era condivisa in community, aggiorna automaticamente anche lì
     if (communityId) await condividiInCommunity(carta);
