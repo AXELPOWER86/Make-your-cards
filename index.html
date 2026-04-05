@@ -1679,9 +1679,13 @@ async function syncImportProgressivo(mazzo) {
   const ref = doc(db, 'users', _currentUser.uid);
   const now = Date.now();
 
-  // carica stato cloud attuale
+  // 🔴 prendi tombstones come fa sync()
+  const deleted = JSON.parse(localStorage.getItem('porky_deleted') || '{}');
+
+  // stato cloud
   const snap = await getDoc(ref);
   const data = snap.exists() ? snap.data() : {};
+
   let carteCloud = data.carte || [];
 
   const map = new Map();
@@ -1707,14 +1711,15 @@ async function syncImportProgressivo(mazzo) {
       });
     }
 
-    // salva parziale (evita limite dimensione)
+    // 🔴 SCRITTURA IDENTICA A sync()
     await setDoc(ref, {
       carte: Array.from(map.values()),
+      tombstones: deleted,
       aggiornato: now
-    }, { merge: true });
+    });
   }
 
-  // 🔴 sync finale per allineare tutto
+  // sync finale
   await sync(true);
 }
 // ═══════════════════════════════════════════════════════
