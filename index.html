@@ -818,62 +818,100 @@ async function sync(silenzioso = true) {
   _syncBusy = true;
 
   try {
-    const ref = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo');
-    const now = Date.now();
+    const uid  = _currentUser.uid;
+    const now  = Date.now();
+    const base = (id) => doc(db, 'users', uid, 'backup', id);
 
-    // 1. Leggi locale
+    // ── 1. Leggi locale ──
     let locale = (await localforage.getItem(CUSTOM_KEY) || []).map(c => ({
       ...c, savedAt: c.savedAt || now
     }));
 
-    // 2. Leggi cloud
+    // ── 2. Leggi cloud: meta + tutti i chunk ──
     let cloudCarte   = [];
     let cloudDeleted = {};
     try {
-      const snap = await getDoc(ref);
-      if (snap.exists()) {
-        const data   = snap.data();
-        cloudCarte   = data.carte      || [];
-        cloudDeleted = data.tombstones || {};
-      }
-    } catch (_) { /* offline */ }
+      const metaSnap = await getDoc(base('mazzo_meta'));
+      if (metaSnap.exists()) {
+        const meta   = metaSnap.data();
+        cloudDeleted = meta.tombstones || {};
+        const nChunk = meta.chunks     || 0;
 
-    // 3. Merge tombstones
+        // Leggi tutti i chunk in parallelo
+        if (nChunk > 0) {
+          const chunkSnaps = await Promise.all(
+            Array.from({ length: nChunk }, (_, i) => getDoc(base('mazzo_chunk_' + i)))
+          );
+          for (const snap of chunkSnaps) {
+            if (snap.exists()) cloudCarte.push(...(snap.data().carte || []));
+          }
+        }
+      }
+    } catch (_) { /* offline: usa solo locale */ }
+
+    // ── 3. Merge tombstones ──
     const localDeleted = JSON.parse(localStorage.getItem('porky_deleted') || '{}');
     const deleted = purgaTombstones({ ...cloudDeleted, ...localDeleted });
     localStorage.setItem('porky_deleted', JSON.stringify(deleted));
 
-    // 4. Merge bidirezionale
+    // ── 4. Merge bidirezionale ──
     const mazzoFinale = await mergeMazzi({ locale, cloud: cloudCarte, deleted });
 
-    // 5. Salva locale
+    // ── 5. Salva locale ──
     await localforage.setItem(CUSTOM_KEY, mazzoFinale);
     await aggiornaListaCustom();
 
-    // 6. Comprimi immagini per cloud (in parallelo, max 5 alla volta)
-    const BATCH_SIZE = 5;
+    // ── 6. Comprimi immagini per cloud (5 alla volta) ──
+    const BATCH = 5;
     const carteCloud = [];
-    for (let i = 0; i < mazzoFinale.length; i += BATCH_SIZE) {
-      const batch = mazzoFinale.slice(i, i + BATCH_SIZE);
-      const compresse = await Promise.all(batch.map(async c => {
+    for (let i = 0; i < mazzoFinale.length; i += BATCH) {
+      const slice = mazzoFinale.slice(i, i + BATCH);
+      const comp  = await Promise.all(slice.map(async c => {
         const { _inModifica, ...rest } = c;
         return { ...rest, img: await comprimiImgPerCloud(c.img) };
       }));
-      carteCloud.push(...compresse);
+      carteCloud.push(...comp);
     }
 
-    // 7. Scrivi su cloud — tutto in un unico setDoc
+    // ── 7. Spezza in chunk da 20 carte ──
+    const CHUNK_SIZE = 20;
+    const chunks = [];
+    for (let i = 0; i < carteCloud.length; i += CHUNK_SIZE) {
+      chunks.push(carteCloud.slice(i, i + CHUNK_SIZE));
+    }
+
+    // ── 8. Tombstones puliti ──
     const shashNelMazzo = new Set(mazzoFinale.map(c => c.shash).filter(Boolean));
     const deletedPulito = Object.fromEntries(
-      Object.entries(deleted).filter(([shash]) => !shashNelMazzo.has(shash))
+      Object.entries(deleted).filter(([s]) => !shashNelMazzo.has(s))
     );
     localStorage.setItem('porky_deleted', JSON.stringify(deletedPulito));
 
-    await setDoc(ref, {
-      carte:      carteCloud,
+    // ── 9. Scrivi meta ──
+    await setDoc(base('mazzo_meta'), {
+      aggiornato: now,
       tombstones: deletedPulito,
-      aggiornato: now
+      chunks:     chunks.length
     });
+
+    // ── 10. Scrivi chunk (in parallelo) ──
+    await Promise.all(
+      chunks.map((carte, i) => setDoc(base('mazzo_chunk_' + i), { carte }))
+    );
+
+    // ── 11. Elimina chunk obsoleti se il mazzo si è accorciato ──
+    // (es. carte cancellate: prima erano 3 chunk, ora sono 2)
+    // Leggiamo quanti chunk c'erano prima dalla meta precedente
+    // Non serve una lettura extra: teniamo traccia in localStorage
+    const prevChunks = parseInt(localStorage.getItem('porky_prev_chunks') || '0');
+    if (prevChunks > chunks.length) {
+      await Promise.all(
+        Array.from({ length: prevChunks - chunks.length }, (_, i) =>
+          deleteDoc(base('mazzo_chunk_' + (chunks.length + i))).catch(() => {})
+        )
+      );
+    }
+    localStorage.setItem('porky_prev_chunks', String(chunks.length));
 
   } catch(e) {
     console.error('sync error:', e);
