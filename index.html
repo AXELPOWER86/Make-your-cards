@@ -564,7 +564,7 @@ import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChang
 import { getFirestore, doc, setDoc, getDoc, collection, getDocs,
          addDoc, updateDoc, deleteDoc, increment, arrayUnion, query, orderBy, limit, onSnapshot }
   from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
-
+ 
 const firebaseConfig = {
   apiKey: "AIzaSyAuZHO-xS2IJKETIUpn8UF9vF898WZflJ4",
   authDomain: "community-carte-porky-s-game.firebaseapp.com",
@@ -573,30 +573,24 @@ const firebaseConfig = {
   messagingSenderId: "249739861540",
   appId: "1:249739861540:web:c14d3b728e0b31c9b142b1"
 };
-
+ 
 const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db   = getFirestore(app);
-
-// ═══════════════════════════════════════════════════════
-// COSTANTI E STATO
-// ═══════════════════════════════════════════════════════
+ 
 const CUSTOM_KEY       = 'mazzo_custom';
-const TOMBSTONE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 giorni
+const TOMBSTONE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const ADMIN_UID        = '6PF8IUUL2IZLXj8v82yHM133vvg2';
-
+ 
 let _currentUser    = null;
 let _communityCards = [];
 let _cartellaHandle = null;
 let _syncTimer      = null;
-let _unsubscribe    = null;  // listener realtime Firestore
-let _syncBusy       = false; // mutex per evitare sync concorrenti
-
+let _unsubscribe    = null;
+let _syncBusy       = false;
+ 
 localforage.config({ name: 'PorkysGame', storeName: 'mazzo_carte' });
-
-// ═══════════════════════════════════════════════════════
-// MODAL (alert / confirm)
-// ═══════════════════════════════════════════════════════
+ 
 function modalDialog(cfgOrMessage, type = 'alert') {
   const cfg = (typeof cfgOrMessage === 'string') ? { message: cfgOrMessage } : (cfgOrMessage || {});
   const { message = '', okText = 'SI', cancelText = 'NO', alertText = 'OK', buttons = [], cancelValue = null } = cfg;
@@ -607,15 +601,15 @@ function modalDialog(cfgOrMessage, type = 'alert') {
     const okBtn     = document.getElementById('modalOk');
     const cancelBtn = document.getElementById('modalCancel');
     const notifBtn  = document.getElementById('modalNotif');
-
+ 
     extra.innerHTML = ''; extra.style.display = 'none';
     okBtn.style.display = cancelBtn.style.display = notifBtn.style.display = 'none';
     textEl.textContent = message;
-
+ 
     const OK = okBtn.cloneNode(true);    okBtn.replaceWith(OK);
     const CA = cancelBtn.cloneNode(true); cancelBtn.replaceWith(CA);
     const NO = notifBtn.cloneNode(true);  notifBtn.replaceWith(NO);
-
+ 
     function cleanup() {
       overlay.style.display = '';
       overlay.style.transform = '';
@@ -645,7 +639,7 @@ function modalDialog(cfgOrMessage, type = 'alert') {
       });
     }
     document.addEventListener('keydown', onKey);
-
+ 
     if (type === 'alert') {
       NO.style.display = 'inline-block'; NO.textContent = alertText;
       NO.addEventListener('click', () => close(true));
@@ -676,17 +670,13 @@ function modalDialog(cfgOrMessage, type = 'alert') {
 }
 const customAlert   = msg => modalDialog(msg, 'alert');
 const customConfirm = cfg => modalDialog(cfg, 'confirm');
-
-// ═══════════════════════════════════════════════════════
-// UTILITY: shash
-// ═══════════════════════════════════════════════════════
+ 
 async function sha256String(str) {
   const buf    = new TextEncoder().encode(str);
   const digest = await crypto.subtle.digest('SHA-256', buf);
   return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2,'0')).join('');
 }
-
-// Garantisce che ogni carta abbia uno shash valido
+ 
 async function garantisciShash(carta) {
   if (carta.shash && carta.shash.trim()) return carta;
   const base = carta.testo
@@ -694,54 +684,43 @@ async function garantisciShash(carta) {
     : (carta.nome || '') + Date.now() + Math.random();
   return { ...carta, shash: await sha256String(base) };
 }
-
+ 
 function normalizzaTesto(t) {
   return t.toUpperCase()
           .replace(/[^\wÀÈÉÌÒÙàèéìòù\s]/g, '')
           .replace(/\s+/g, ' ')
           .trim();
 }
-
-// ═══════════════════════════════════════════════════════
-// COMPRESSIONE IMMAGINI (solo per il cloud)
-// ═══════════════════════════════════════════════════════
+ 
 function comprimiImgPerCloud(dataUrl) {
   return new Promise(resolve => {
     const img = new Image();
     img.onload = () => {
+      // Ridimensiona a max 520px per stare abbondantemente sotto 1MB Firestore
+      const MAX    = 520;
+      const ratio  = Math.min(MAX / img.width, MAX / img.height, 1);
       const canvas = document.createElement('canvas');
-      canvas.width  = img.width;
-      canvas.height = img.height;
+      canvas.width  = Math.round(img.width  * ratio);
+      canvas.height = Math.round(img.height * ratio);
       const ctx = canvas.getContext('2d');
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(img, 0, 0);
-
-      // Soglia: 700KB in base64 = ~955KB reali, sicuri sotto 1MB Firestore
-      const LIMIT = 700 * 1024;
-
-      // Prova PNG prima (lossless, qualità massima)
-      const png = canvas.toDataURL('image/png');
-      if (png.length <= LIMIT) { resolve(png); return; }
-
-      // PNG troppo grande: scendi con JPEG fino a stare sotto soglia
-      const qualita = [0.97, 0.93, 0.88, 0.82, 0.75];
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+ 
+      // ~80KB per carta → chunk da 20 carte = ~1.6MB → con margine sicuro
+      const LIMIT = 80 * 1024;
+      const qualita = [0.92, 0.85, 0.78, 0.70];
       for (const q of qualita) {
         const jpg = canvas.toDataURL('image/jpeg', q);
         if (jpg.length <= LIMIT) { resolve(jpg); return; }
       }
-
-      // Fallback estremo: ultima qualità della lista
-      resolve(canvas.toDataURL('image/jpeg', 0.75));
+      resolve(canvas.toDataURL('image/jpeg', 0.70));
     };
     img.onerror = () => resolve(dataUrl);
     img.src = dataUrl;
   });
 }
-
-// ═══════════════════════════════════════════════════════
-// TOMBSTONE: TTL purge
-// ═══════════════════════════════════════════════════════
+ 
 function purgaTombstones(deleted) {
   const now = Date.now();
   const out = {};
@@ -750,33 +729,17 @@ function purgaTombstones(deleted) {
   }
   return out;
 }
-
-// ═══════════════════════════════════════════════════════
-// MERGE BIDIREZIONALE (cuore del sistema)
-//
-// Regole:
-//  1. locale è sempre autoritario come sorgente primaria
-//  2. cloud porta carte nuove che locale non ha
-//  3. se stessa carta su entrambi → vince savedAt più alto,
-//     ma img locale NON viene mai sovrascritta (è full-res)
-//  4. tombstone batte tutto: carta eliminata sparisce ovunque
-//  5. shash mancante → assegnato automaticamente
-// ═══════════════════════════════════════════════════════
+ 
 async function mergeMazzi({ locale, cloud, deleted }) {
-  // Garantisce shash su tutte le carte
   locale = await Promise.all(locale.map(garantisciShash));
   cloud  = await Promise.all(cloud.map(garantisciShash));
-
-  // deleted è { shash: timestamp } — il tombstone vince solo se
-  // la carta è stata salvata PRIMA della cancellazione.
-  // Se savedAt > timestamp tombstone → la carta è stata ri-creata dopo → sopravvive.
+ 
   const deletedMap = deleted || {};
   const map = new Map();
-
-  // Prima passata: carte locali
+ 
   for (const c of locale) {
     const ts = deletedMap[c.shash];
-    if (ts && (c.savedAt || 0) <= ts) continue; // cancellata e non ri-creata dopo
+    if (ts && (c.savedAt || 0) <= ts) continue;
     if (map.has(c.shash)) {
       const existing = map.get(c.shash);
       if ((c.savedAt || 0) > (existing.savedAt || 0)) map.set(c.shash, { ...c });
@@ -784,11 +747,10 @@ async function mergeMazzi({ locale, cloud, deleted }) {
       map.set(c.shash, { ...c });
     }
   }
-
-  // Seconda passata: carte cloud
+ 
   for (const cc of cloud) {
     const ts = deletedMap[cc.shash];
-    if (ts && (cc.savedAt || 0) <= ts) continue; // cancellata e non ri-creata dopo
+    if (ts && (cc.savedAt || 0) <= ts) continue;
     if (!map.has(cc.shash)) {
       map.set(cc.shash, { ...cc });
     } else {
@@ -798,111 +760,150 @@ async function mergeMazzi({ locale, cloud, deleted }) {
       }
     }
   }
-
+ 
   return [...map.values()];
 }
-
-// ═══════════════════════════════════════════════════════
-// SYNC: unico punto di sincronizzazione cloud ↔ locale
-//
-// Flusso:
-//  1. Leggi locale
-//  2. Leggi cloud (se online e loggato)
-//  3. Merge bidirezionale
-//  4. Salva risultato in locale
-//  5. Scrivi risultato su cloud (img compresse)
-// ═══════════════════════════════════════════════════════
+ 
+async function rigeneraFullResSilente(mazzo) {
+  let modificato = false;
+  for (let i = 0; i < mazzo.length; i++) {
+    const carta = mazzo[i];
+    // Salta: già full-res locale, oppure niente testo da rigenerare
+    if (carta.fullRes || !carta.testo || !carta.testo.trim()) continue;
+    try {
+      // Carica il testo nella card visuale (avviene in background)
+      document.getElementById('inp-body').value = carta.testo;
+      document.getElementById('card-body-inner').textContent = carta.testo.toUpperCase();
+      await new Promise(r => document.fonts.ready.then(r));
+      autoFit();
+      await new Promise(r => requestAnimationFrame(r));
+ 
+      const shash   = await sha256String(carta.testo.toUpperCase().trim());
+      const canvas  = await generaCanvas();
+      const dataUrl = canvas.toDataURL('image/png');
+      const rawBuf  = await (await fetch(dataUrl)).arrayBuffer();
+      const pngBuf  = injectPngTextChunk(rawBuf, 'porky_shash', shash);
+      const fullRes = 'data:image/png;base64,' + arrayBufferToBase64(pngBuf);
+ 
+      // savedAt invariato: il sync non ricarica sul cloud questa carta
+      mazzo[i] = { ...carta, img: fullRes, shash, fullRes: true };
+      modificato = true;
+    } catch(e) {
+      console.warn('rigeneraFullRes: errore su carta', carta.testo, e);
+    }
+  }
+ 
+  // Ripristina textarea vuota
+  if (modificato) {
+    document.getElementById('inp-body').value = '';
+    document.getElementById('card-body-inner').textContent = '';
+    autoFit();
+  }
+ 
+  return { mazzo, modificato };
+}
+ 
 async function sync(silenzioso = true) {
   if (!_currentUser) return;
   if (_syncBusy) return;
   _syncBusy = true;
-
+ 
   try {
-    const uid  = _currentUser.uid;
-    const now  = Date.now();
-    const base = (id) => doc(db, 'users', uid, 'backup', id);
-
+    const ref = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo');
+    const now = Date.now();
+ 
     // ── 1. Leggi locale ──
     let locale = (await localforage.getItem(CUSTOM_KEY) || []).map(c => ({
       ...c, savedAt: c.savedAt || now
     }));
-
-    // ── 2. Leggi cloud: meta + tutti i chunk ──
+ 
+    // ── 2. Leggi cloud ──
     let cloudCarte   = [];
     let cloudDeleted = {};
     try {
-      const metaSnap = await getDoc(base('mazzo_meta'));
-      if (metaSnap.exists()) {
-        const meta   = metaSnap.data();
-        cloudDeleted = meta.tombstones || {};
-        const nChunk = meta.chunks     || 0;
-
-        // Leggi tutti i chunk in parallelo
-        if (nChunk > 0) {
-          const chunkSnaps = await Promise.all(
-            Array.from({ length: nChunk }, (_, i) => getDoc(base('mazzo_chunk_' + i)))
-          );
-          for (const snap of chunkSnaps) {
-            if (snap.exists()) cloudCarte.push(...(snap.data().carte || []));
-          }
-        }
+      const snap = await getDoc(ref);
+      if (snap.exists()) {
+        const data   = snap.data();
+        cloudCarte   = data.carte      || [];
+        cloudDeleted = data.tombstones || {};
       }
     } catch (_) { /* offline: usa solo locale */ }
-
+ 
     // ── 3. Merge tombstones ──
     const localDeleted = JSON.parse(localStorage.getItem('porky_deleted') || '{}');
     const deleted = purgaTombstones({ ...cloudDeleted, ...localDeleted });
     localStorage.setItem('porky_deleted', JSON.stringify(deleted));
-
+ 
     // ── 4. Merge bidirezionale ──
-    const mazzoFinale = await mergeMazzi({ locale, cloud: cloudCarte, deleted });
-
-    // ── 5. Salva locale ──
+    const mazzoMerged = await mergeMazzi({ locale, cloud: cloudCarte, deleted });
+ 
+    // ── 5. Rigenera full-res silente per carte arrivate dal cloud senza fullRes ──
+    const { mazzo: mazzoFinale, modificato } = await rigeneraFullResSilente(mazzoMerged);
+ 
+    // ── 6. Salva locale ──
     await localforage.setItem(CUSTOM_KEY, mazzoFinale);
     await aggiornaListaCustom();
-
-    // ── 6. Comprimi immagini per cloud (5 alla volta) ──
+ 
+    // ── 7. Indice cloud per evitare ricompressioni inutili ──
+    // Se shash + savedAt coincidono → carta non cambiata → riusa img già sul cloud
+    const cloudIndex = new Map(cloudCarte.map(c => [c.shash, c.savedAt || 0]));
+ 
+    // ── 8. Comprimi in batch da 5 (solo carte cambiate) ──
     const BATCH = 5;
     const carteCloud = [];
     for (let i = 0; i < mazzoFinale.length; i += BATCH) {
       const slice = mazzoFinale.slice(i, i + BATCH);
       const comp  = await Promise.all(slice.map(async c => {
-        const { _inModifica, ...rest } = c;
+        const { _inModifica, fullRes, ...rest } = c; // fullRes non va sul cloud
+        const cloudSavedAt = cloudIndex.get(c.shash);
+        if (cloudSavedAt !== undefined && cloudSavedAt === (c.savedAt || 0)) {
+          // Carta invariata: riusa immagine già compressa sul cloud
+          const cartaCloud = cloudCarte.find(cc => cc.shash === c.shash);
+          if (cartaCloud) return { ...rest, img: cartaCloud.img };
+        }
         return { ...rest, img: await comprimiImgPerCloud(c.img) };
       }));
       carteCloud.push(...comp);
     }
-
-    // ── 7. Spezza in chunk da 20 carte ──
-    const CHUNK_SIZE = 20;
+ 
+    // ── 9. Chunk dinamici basati sul peso reale (max 700KB per chunk) ──
+    const CHUNK_LIMIT = 700 * 1024;
     const chunks = [];
-    for (let i = 0; i < carteCloud.length; i += CHUNK_SIZE) {
-      chunks.push(carteCloud.slice(i, i + CHUNK_SIZE));
+    let chunkCorrente = [];
+    let pesoCorrente  = 0;
+    for (const carta of carteCloud) {
+      const peso = (carta.img || '').length;
+      if (chunkCorrente.length > 0 && pesoCorrente + peso > CHUNK_LIMIT) {
+        chunks.push(chunkCorrente);
+        chunkCorrente = [];
+        pesoCorrente  = 0;
+      }
+      chunkCorrente.push(carta);
+      pesoCorrente += peso;
     }
-
-    // ── 8. Tombstones puliti ──
+    if (chunkCorrente.length > 0) chunks.push(chunkCorrente);
+ 
+    // ── 10. Tombstones puliti ──
     const shashNelMazzo = new Set(mazzoFinale.map(c => c.shash).filter(Boolean));
     const deletedPulito = Object.fromEntries(
       Object.entries(deleted).filter(([s]) => !shashNelMazzo.has(s))
     );
     localStorage.setItem('porky_deleted', JSON.stringify(deletedPulito));
-
-    // ── 9. Scrivi meta ──
+ 
+    // ── 11. Scrivi meta ──
+    const base = (id) => doc(db, 'users', _currentUser.uid, 'backup', id);
     await setDoc(base('mazzo_meta'), {
       aggiornato: now,
       tombstones: deletedPulito,
       chunks:     chunks.length
     });
-
-    // ── 10. Scrivi chunk (in parallelo) ──
+ 
+    // ── 12. Scrivi chunk in parallelo ──
     await Promise.all(
       chunks.map((carte, i) => setDoc(base('mazzo_chunk_' + i), { carte }))
     );
-
-    // ── 11. Elimina chunk obsoleti se il mazzo si è accorciato ──
-    // (es. carte cancellate: prima erano 3 chunk, ora sono 2)
-    // Leggiamo quanti chunk c'erano prima dalla meta precedente
-    // Non serve una lettura extra: teniamo traccia in localStorage
+ 
+    // ── 13. Elimina chunk obsoleti (mazzo ridotto) ──
     const prevChunks = parseInt(localStorage.getItem('porky_prev_chunks') || '0');
     if (prevChunks > chunks.length) {
       await Promise.all(
@@ -912,76 +913,59 @@ async function sync(silenzioso = true) {
       );
     }
     localStorage.setItem('porky_prev_chunks', String(chunks.length));
-
+ 
   } catch(e) {
     console.error('sync error:', e);
   } finally {
     _syncBusy = false;
   }
 }
-
-// ── Aggiunge uno shash ai tombstone e propaga su cloud immediatamente ──
+ 
 async function aggiungiTombstone(shash) {
   if (!shash || !shash.trim()) return;
   const ts = Date.now();
-
-  // Locale (localStorage, non localforage: veloce e sincrono)
+ 
   const local = JSON.parse(localStorage.getItem('porky_deleted') || '{}');
   local[shash] = ts;
   localStorage.setItem('porky_deleted', JSON.stringify(purgaTombstones(local)));
-
-  // Cloud: setDoc con merge:true crea il documento se non esiste,
-  // aggiorna solo il campo tombstones se esiste già (updateDoc fallirebbe su doc inesistente)
+ 
   if (_currentUser) {
     try {
-      const ref = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo');
-      const snap = await getDoc(ref);
+      const metaRef = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo_meta');
+      const snap = await getDoc(metaRef);
       const cloudDeleted = snap.exists() ? (snap.data().tombstones || {}) : {};
       cloudDeleted[shash] = ts;
-      await setDoc(ref, { tombstones: purgaTombstones(cloudDeleted), aggiornato: ts }, { merge: true });
-    } catch (_) { /* offline: il tombstone locale verrà propagato al prossimo sync */ }
+      await setDoc(metaRef, { tombstones: purgaTombstones(cloudDeleted), aggiornato: ts }, { merge: true });
+    } catch (_) { }
   }
 }
-
-// ── Listener realtime + fallback periodico ──
-// onSnapshot: propaga aggiornamenti quasi istantaneamente agli altri dispositivi.
-// Il timer da 60s è solo un fallback (tombstone offline, tab tornato visibile, ecc.).
-// Entrambi chiamano la stessa sync() con la stessa mergeMazzi() → nessun conflitto.
+ 
 function avviaAutoSync() {
   fermaAutoSync();
-
-  // Realtime: ogni volta che il documento cloud cambia, sync() immediato
   if (_currentUser) {
-    const ref = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo');
-    _unsubscribe = onSnapshot(ref, () => sync(true));
+    const metaRef = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo_meta');
+    _unsubscribe = onSnapshot(metaRef, () => sync(true));
   }
-
-  // Fallback periodico ogni 60s
   _syncTimer = setInterval(() => sync(true), 60000);
 }
 function fermaAutoSync() {
   if (_unsubscribe) { _unsubscribe(); _unsubscribe = null; }
   if (_syncTimer)   { clearInterval(_syncTimer); _syncTimer = null; }
 }
-
-// ═══════════════════════════════════════════════════════
-// AUTH
-// ═══════════════════════════════════════════════════════
+ 
 onAuthStateChanged(auth, async user => {
   _currentUser = user;
   const loginInfo = document.getElementById('login-info');
   const btnLogin  = document.getElementById('btn-login');
   const btnLogout = document.getElementById('btn-logout');
   const btnCom    = document.getElementById('btn-community');
-
+ 
   if (user) {
     loginInfo.innerHTML = (user.photoURL ? `<img src="${user.photoURL}" alt="">` : '') +
                           ' ' + (user.displayName || user.email);
     btnLogin.style.display  = 'none';
     btnLogout.style.display = 'inline-block';
     btnCom.style.display    = 'inline-block';
-
-    // Sync unica all'avvio
     await sync(true);
     avviaAutoSync();
   } else {
@@ -990,11 +974,10 @@ onAuthStateChanged(auth, async user => {
     btnLogin.style.display  = 'inline-block';
     btnLogout.style.display = 'none';
     btnCom.style.display    = 'none';
-    // Aggiorna lista locale anche senza login
     await aggiornaListaCustom();
   }
 });
-
+ 
 document.getElementById('btn-login').addEventListener('click', async () => {
   try {
     await signInWithPopup(auth, new GoogleAuthProvider());
@@ -1002,33 +985,27 @@ document.getElementById('btn-login').addEventListener('click', async () => {
     if (e.code !== 'auth/popup-closed-by-user') await customAlert('Errore login:\n' + e.message);
   }
 });
-
+ 
 document.getElementById('btn-logout').addEventListener('click', async () => {
   if (!await customConfirm({ message: 'Disconnettersi da Google?', okText: 'SI', cancelText: 'NO' })) return;
   await signOut(auth);
 });
-
-// Sync quando si torna online
+ 
 window.addEventListener('online', () => sync(true));
-
-// Sync quando il tab torna visibile
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') sync(true);
 });
-
-// ═══════════════════════════════════════════════════════
-// COMMUNITY
-// ═══════════════════════════════════════════════════════
+ 
 document.getElementById('btn-community').addEventListener('click', async () => {
   document.getElementById('communityOverlay').style.display = 'flex';
   document.getElementById('community-search').value = '';
   await caricaCommunity();
 });
-
+ 
 document.getElementById('btn-chiudi-community').addEventListener('click', () => {
   document.getElementById('communityOverlay').style.display = 'none';
 });
-
+ 
 async function caricaCommunity() {
   const status = document.getElementById('community-status');
   const grid   = document.getElementById('community-grid');
@@ -1044,51 +1021,50 @@ async function caricaCommunity() {
     status.textContent = 'Errore caricamento: ' + e.message;
   }
 }
-
+ 
 function renderCommunity(cards) {
   const grid    = document.getElementById('community-grid');
   grid.innerHTML = '';
   if (!cards.length) return;
-
-  // Raggruppa per utente mantenendo ordine likes dentro ogni gruppo
+ 
   const sorted = [...cards].sort((a, b) => {
     const ua = a.uid || ''; const ub = b.uid || '';
     if (ua < ub) return -1;
     if (ua > ub) return 1;
-    return (b.likes || 0) - (a.likes || 0); // dentro ogni utente: likes desc
+    return (b.likes || 0) - (a.likes || 0);
   });
-
+ 
   const isAdmin = _currentUser && _currentUser.uid === ADMIN_UID;
   sorted.forEach(carta => {
     const isOwner = _currentUser && carta.uid === _currentUser.uid;
     const wrap    = document.createElement('div');
     wrap.className = 'community-card';
-
+ 
     const img   = document.createElement('img');
     img.src     = carta.img; img.title = carta.testo || '';
     img.style.cursor = 'pointer';
     img.onclick = () => apriDettaglioCarta(carta);
-
+ 
     const likes = document.createElement('div');
     likes.className = 'c-likes'; likes.id = 'likes-' + carta.id;
     likes.textContent = '❤️ ' + (carta.likes || 0);
-
+ 
     const btns      = document.createElement('div');
     btns.className  = 'c-btns';
-
+ 
     const btnImport = document.createElement('button');
     btnImport.className = 'c-import'; btnImport.textContent = '⬇';
     btnImport.title = 'Importa nel mazzo';
     btnImport.onclick = () => importaDaCommunity(carta);
-
+ 
     const btnLike = document.createElement('button');
     btnLike.className = 'c-like'; btnLike.textContent = '❤';
     btnLike.title = 'Metti like';
     btnLike.onclick = () => likeCarta(carta.id);
-
+ 
     btns.appendChild(btnImport);
     btns.appendChild(btnLike);
-
+ 
     if (isOwner || isAdmin) {
       const btnDel = document.createElement('button');
       btnDel.className = 'c-like'; btnDel.style.background = '#d64040';
@@ -1097,10 +1073,10 @@ function renderCommunity(cards) {
       btnDel.onclick = () => eliminaCartaCommunity(carta.id);
       btns.appendChild(btnDel);
     }
-
+ 
     wrap.appendChild(img);
     wrap.appendChild(likes); wrap.appendChild(btns);
-
+ 
     if (isAdmin) {
       const autore = document.createElement('div');
       autore.style.cssText = 'font-size:8px;color:#502369;font-weight:bold;text-align:center;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px;';
@@ -1111,25 +1087,24 @@ function renderCommunity(cards) {
     grid.appendChild(wrap);
   });
 }
-
+ 
 document.getElementById('community-search').addEventListener('input', () => {
   const q = document.getElementById('community-search').value.trim().toLowerCase();
   renderCommunity(q ? _communityCards.filter(c => (c.testo || '').toLowerCase().includes(q)) : _communityCards);
 });
-
+ 
 async function importaDaCommunity(carta) {
   let mazzo = await localforage.getItem(CUSTOM_KEY) || [];
-
-  // Assicura shash sulla carta community
+ 
   const cartaConShash = await garantisciShash(carta);
   const testoNorm     = (cartaConShash.testo || '').toUpperCase().trim();
-
+ 
   const duplicata = mazzo.some(c =>
     (c.shash && cartaConShash.shash && c.shash === cartaConShash.shash) ||
     (testoNorm && (c.testo || '').toUpperCase().trim() === testoNorm)
   );
   if (duplicata) { await customAlert('Questa carta è già nel tuo mazzo.'); return; }
-
+ 
   const nuovaCarta = {
     ...cartaConShash,
     estratta: false,
@@ -1137,16 +1112,13 @@ async function importaDaCommunity(carta) {
     savedAt: Date.now()
   };
   mazzo.push(nuovaCarta);
-
+ 
   await localforage.setItem(CUSTOM_KEY, mazzo);
   await aggiornaListaCustom();
-
-  // Sync immediato: porta la carta anche sul backup cloud
   await sync(true);
-
   await customAlert('Carta importata nel mazzo!');
 }
-
+ 
 async function likeCarta(id) {
   if (!_currentUser) { await customAlert('Devi accedere con Google per mettere like.'); return; }
   const carta = _communityCards.find(c => c.id === id);
@@ -1166,7 +1138,7 @@ async function likeCarta(id) {
     }
   } catch(e) { await customAlert('Errore like:\n' + e.message); }
 }
-
+ 
 async function eliminaCartaCommunity(id) {
   if (!await customConfirm({ message: 'Eliminare questa carta dalla community?', okText: 'SI', cancelText: 'NO' })) return;
   try {
@@ -1183,12 +1155,12 @@ async function eliminaCartaCommunity(id) {
     renderCommunity(_communityCards);
   } catch(e) { await customAlert('Errore eliminazione:\n' + e.message); }
 }
-
+ 
 async function condividiInCommunity(carta) {
   if (!_currentUser) { await customAlert('Devi accedere con Google per condividere.'); return; }
   try {
     const imgCloud = await comprimiImgPerCloud(carta.img);
-
+ 
     if (carta.communityId) {
       await updateDoc(doc(db, 'community', carta.communityId), {
         testo: carta.testo || '', img: imgCloud,
@@ -1199,18 +1171,17 @@ async function condividiInCommunity(carta) {
       await customAlert('Carta aggiornata nella community! ✏️');
       return;
     }
-
+ 
     if (_communityCards.some(c => c.shash === carta.shash)) {
       await customAlert('Questa carta è già presente nella community.'); return;
     }
-
+ 
     const ref = await addDoc(collection(db, 'community'), {
       testo: carta.testo || '', img: imgCloud, shash: carta.shash || '',
       nome: carta.nome || '', autore: _currentUser.displayName || _currentUser.email,
       uid: _currentUser.uid, likes: 0, likedBy: [], data: new Date().toISOString()
     });
-
-    // Salva communityId nel mazzo locale
+ 
     const mazzo       = await localforage.getItem(CUSTOM_KEY) || [];
     const cartaLocale = mazzo.find(c => c.shash === carta.shash);
     if (cartaLocale) {
@@ -1219,25 +1190,22 @@ async function condividiInCommunity(carta) {
       await localforage.setItem(CUSTOM_KEY, mazzo);
     }
     await customAlert('Carta condivisa con la community! 🎉');
-    sync(true); // senza await: non blocca l'alert
+    sync(true);
   } catch(e) { await customAlert('Errore condivisione:\n' + e.message); }
 }
-
-// ═══════════════════════════════════════════════════════
-// INGRANDIMENTO CARTA COMMUNITY
-// ═══════════════════════════════════════════════════════
+ 
 function apriDettaglioCarta(carta) {
   const overlay = document.getElementById('cardDetailOverlay');
-
+ 
   document.getElementById('cardDetailBg').src = carta.img;
   document.getElementById('cardDetailLikes').textContent = '❤️ ' + (carta.likes || 0);
-
+ 
   document.getElementById('cardDetailImport').onclick = () => {
     importaDaCommunity(carta);
     overlay.style.display = 'none';
   };
   document.getElementById('cardDetailLike').onclick = () => likeCarta(carta.id);
-
+ 
   const btnDel  = document.getElementById('cardDetailDelete');
   const isOwner = _currentUser && carta.uid === _currentUser.uid;
   const isAdmin = _currentUser && _currentUser.uid === ADMIN_UID;
@@ -1246,10 +1214,10 @@ function apriDettaglioCarta(carta) {
     eliminaCartaCommunity(carta.id);
     overlay.style.display = 'none';
   };
-
+ 
   overlay.style.display = 'flex';
 }
-
+ 
 document.getElementById('cardDetailClose').addEventListener('click', () => {
   document.getElementById('cardDetailOverlay').style.display = 'none';
 });
@@ -1257,16 +1225,13 @@ document.getElementById('cardDetailOverlay').addEventListener('click', e => {
   if (e.target === document.getElementById('cardDetailOverlay'))
     document.getElementById('cardDetailOverlay').style.display = 'none';
 });
-
-// ═══════════════════════════════════════════════════════
-// EDITOR CARTA
-// ═══════════════════════════════════════════════════════
+ 
 function updateCard() {
   const raw = document.getElementById('inp-body').value;
   document.getElementById('card-body-inner').textContent = raw.toUpperCase();
   document.fonts.ready.then(() => autoFit());
 }
-
+ 
 function autoFit() {
   const inner = document.getElementById('card-body-inner');
   const body  = document.getElementById('card-body');
@@ -1283,17 +1248,17 @@ function autoFit() {
   }
   inner.style.fontSize = best + 'px';
 }
-
+ 
 function resetAll() {
   document.getElementById('inp-body').value = '';
   document.getElementById('card-body-inner').textContent = '';
   document.getElementById('inp-body').focus();
 }
-
+ 
 document.getElementById('inp-body').addEventListener('input', updateCard);
 document.getElementById('btn-reset-testo').addEventListener('click', resetAll);
 window.addEventListener('resize', () => document.fonts.ready.then(() => autoFit()));
-
+ 
 document.getElementById('btn-carica-sfondo').addEventListener('click', () => {
   document.getElementById('inp-carta').click();
 });
@@ -1308,10 +1273,7 @@ document.getElementById('inp-carta').addEventListener('change', event => {
   };
   reader.readAsDataURL(file);
 });
-
-// ═══════════════════════════════════════════════════════
-// UTILITY PNG
-// ═══════════════════════════════════════════════════════
+ 
 function injectPngTextChunk(arrayBuffer, keyword, text) {
   const encoder  = new TextEncoder();
   const keyBytes = encoder.encode(keyword);
@@ -1343,7 +1305,7 @@ function injectPngTextChunk(arrayBuffer, keyword, text) {
   result.set(src.slice(0, 33)); result.set(chunk, 33); result.set(src.slice(33), 33 + chunk.length);
   return result.buffer;
 }
-
+ 
 function arrayBufferToBase64(buffer) {
   const bytes  = new Uint8Array(buffer);
   let binary   = '';
@@ -1352,17 +1314,14 @@ function arrayBufferToBase64(buffer) {
     binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
   return btoa(binary);
 }
-
+ 
 async function generaCanvas() {
   return await html2canvas(document.getElementById('card-container'), {
     scale: 3, useCORS: true, allowTaint: true,
     backgroundColor: null, logging: false, imageTimeout: 10000
   });
 }
-
-// ═══════════════════════════════════════════════════════
-// SALVA FILE (download / directory picker)
-// ═══════════════════════════════════════════════════════
+ 
 async function salvaFile(dataUrl, filename) {
   const res  = await fetch(dataUrl);
   const blob = await res.blob();
@@ -1389,10 +1348,7 @@ async function salvaFile(dataUrl, filename) {
   await customAlert('Carta scaricata: ' + filename);
   return filename;
 }
-
-// ═══════════════════════════════════════════════════════
-// DOWNLOAD PNG
-// ═══════════════════════════════════════════════════════
+ 
 document.getElementById('btn-dl').addEventListener('click', async () => {
   const btn = document.getElementById('btn-dl');
   btn.classList.add('loading'); btn.disabled = true;
@@ -1412,10 +1368,7 @@ document.getElementById('btn-dl').addEventListener('click', async () => {
     btn.classList.remove('loading'); btn.disabled = false;
   }
 });
-
-// ═══════════════════════════════════════════════════════
-// SALVA NEL MAZZO
-// ═══════════════════════════════════════════════════════
+ 
 document.getElementById('btn-salva').addEventListener('click', async () => {
   const btn = document.getElementById('btn-salva');
   btn.disabled = true; btn.classList.add('loading');
@@ -1428,42 +1381,40 @@ document.getElementById('btn-salva').addEventListener('click', async () => {
     const rawBuf  = await (await fetch(dataUrl)).arrayBuffer();
     const pngBuf  = injectPngTextChunk(rawBuf, 'porky_shash', shash);
     const injectedDataUrl = 'data:image/png;base64,' + arrayBufferToBase64(pngBuf);
-
+ 
     const esistente = await localforage.getItem(CUSTOM_KEY) || [];
     if (esistente.some(c => c.shash === shash && !c._inModifica)) {
       await customAlert('Questa carta è già nel mazzo personalizzato.'); return;
     }
-
+ 
     const cartaInModifica = esistente.find(c => c._inModifica);
     const nome            = cartaInModifica ? cartaInModifica.nome : 'carta_custom_' + shash.slice(0, 8) + '.png';
     const communityId     = cartaInModifica ? (cartaInModifica.communityId || null) : null;
     const vecchioShash    = (cartaInModifica && cartaInModifica.shash !== shash)
       ? cartaInModifica.shash : null;
-
+ 
     const carta = {
       hash: null, phash: null, shash, lphash256: null,
       img: injectedDataUrl, nome, originale: nome,
-      estratta: false, testo, communityId, savedAt: Date.now()
+      estratta: false, testo, communityId, savedAt: Date.now(),
+      fullRes: true  // creata localmente: è già full-res
     };
-
+ 
     const mazzoFinale = esistente.filter(c => !c._inModifica);
     mazzoFinale.push(carta);
-
+ 
     await localforage.setItem(CUSTOM_KEY, mazzoFinale);
     await aggiornaListaCustom();
-
-    // Se il testo è cambiato, il vecchio shash diventa tombstone
+ 
     if (vecchioShash) await aggiungiTombstone(vecchioShash);
-
-    // Se la carta era condivisa in community, aggiorna prima la community
-    // poi manda sync in background
+ 
     if (communityId) {
       await condividiInCommunity(carta);
       sync(true);
     } else {
       sync(true);
     }
-
+ 
     document.getElementById('preview-share-wrap').style.display = 'none';
     resetAll();
   } catch(e) {
@@ -1472,20 +1423,14 @@ document.getElementById('btn-salva').addEventListener('click', async () => {
     btn.disabled = false; btn.classList.remove('loading');
   }
 });
-
-// ═══════════════════════════════════════════════════════
-// CONDIVIDI CARTA IN MODIFICA (pulsante sotto anteprima)
-// ═══════════════════════════════════════════════════════
+ 
 document.getElementById('btn-condividi-preview').addEventListener('click', async () => {
   const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
   const carta = mazzo.find(c => c._inModifica);
   if (!carta) { await customAlert('Seleziona prima una carta dal mazzo (click su ✏️).'); return; }
   await condividiInCommunity(carta);
 });
-
-// ═══════════════════════════════════════════════════════
-// GESTIONE MAZZO
-// ═══════════════════════════════════════════════════════
+ 
 async function aggiornaListaCustom() {
   const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
   document.getElementById('contatore-custom').textContent = mazzo.length;
@@ -1494,32 +1439,32 @@ async function aggiornaListaCustom() {
   mazzo.forEach((carta, idx) => {
     const wrap = document.createElement('div');
     wrap.className = 'card-item';
-
+ 
     const img   = document.createElement('img');
     img.src     = carta.img;
     img.title   = carta.testo || carta.nome;
     img.style.cursor = 'pointer';
     img.onclick = () => modificaCarta(idx);
-
+ 
     if (carta._inModifica) {
       wrap.style.opacity = '0.6';
       img.style.border   = '2px solid #f0c040';
       img.title          = '(in modifica) ' + (carta.testo || carta.nome);
     }
-
+ 
     const btns   = document.createElement('div');
     btns.className = 'card-item-btns';
-
+ 
     const btnMod = document.createElement('button');
     btnMod.textContent = '✏️'; btnMod.className = 'btn-mod';
     btnMod.title = 'Modifica carta';
     btnMod.onclick = () => modificaCarta(idx);
-
+ 
     const btnDel = document.createElement('button');
     btnDel.textContent = '🗑'; btnDel.className = 'btn-del';
     btnDel.title = 'Elimina carta';
     btnDel.onclick = () => eliminaCarta(idx);
-
+ 
     btns.appendChild(btnMod);
     btns.appendChild(btnDel);
     wrap.appendChild(img);
@@ -1527,13 +1472,12 @@ async function aggiornaListaCustom() {
     lista.appendChild(wrap);
   });
 }
-
+ 
 async function modificaCarta(idx) {
   const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
   const carta = mazzo[idx];
   if (!carta) return;
-
-  // Secondo click: deseleziona
+ 
   if (carta._inModifica) {
     delete carta._inModifica;
     await localforage.setItem(CUSTOM_KEY, mazzo);
@@ -1542,11 +1486,10 @@ async function modificaCarta(idx) {
     document.getElementById('preview-share-wrap').style.display = 'none';
     return;
   }
-
-  // Deseleziona eventuale altra carta in modifica
+ 
   const prev = mazzo.findIndex(c => c._inModifica);
   if (prev !== -1) delete mazzo[prev]._inModifica;
-
+ 
   carta._inModifica = true;
   await localforage.setItem(CUSTOM_KEY, mazzo);
   document.getElementById('inp-body').value = carta.testo || '';
@@ -1554,61 +1497,45 @@ async function modificaCarta(idx) {
   await aggiornaListaCustom();
   document.getElementById('preview-share-wrap').style.display = 'block';
 }
-
+ 
 async function eliminaCarta(idx) {
   const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
   const carta = mazzo[idx];
   if (!carta) return;
-
+ 
   if (!await customConfirm({
     message: 'Eliminare la carta "' + (carta.testo || carta.nome) + '"?',
     okText: 'SI', cancelText: 'NO'
   })) return;
-
-  // Rimuovi dal locale
+ 
   mazzo.splice(idx, 1);
   await localforage.setItem(CUSTOM_KEY, mazzo);
   await aggiornaListaCustom();
-
-  // Tombstone immediato: propaga la cancellazione subito su cloud
-  // così gli altri dispositivi la vedono al prossimo sync
+ 
   if (carta.shash) await aggiungiTombstone(carta.shash);
-
-  // Sync completo: aggiorna cloud con il mazzo corrente
   await sync(true);
 }
-
+ 
 document.getElementById('btn-cancella-tutto').addEventListener('click', async () => {
   if (!await customConfirm({
     message: 'Cancellare tutto il mazzo personalizzato?',
-    okText: 'SI',
-    cancelText: 'NO'
+    okText: 'SI', cancelText: 'NO'
   })) return;
-
+ 
   const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
-
-  // 🔴 1. salva tutti i tombstone in un colpo solo (NO await dentro loop)
   const local = JSON.parse(localStorage.getItem('porky_deleted') || '{}');
   const now = Date.now();
-
+ 
   for (const carta of mazzo) {
-    if (carta.shash) {
-      local[carta.shash] = now;
-    }
+    if (carta.shash) local[carta.shash] = now;
   }
-
+ 
   localStorage.setItem('porky_deleted', JSON.stringify(local));
-
-  // 🔴 2. svuota mazzo SENZA removeItem (evita glitch sync)
   await localforage.setItem(CUSTOM_KEY, []);
-
-  // 🔴 3. aggiorna UI
   await aggiornaListaCustom();
-
-  // 🔴 4. UN SOLO sync finale
   await sync(true);
 });
-
+ 
 document.getElementById('cerca-mazzo').addEventListener('input', () => {
   const q = document.getElementById('cerca-mazzo').value.trim().toLowerCase();
   document.getElementById('lista-custom').querySelectorAll('.card-item').forEach(item => {
@@ -1616,10 +1543,7 @@ document.getElementById('cerca-mazzo').addEventListener('input', () => {
     item.style.display = (!q || t.includes(q)) ? '' : 'none';
   });
 });
-
-// ═══════════════════════════════════════════════════════
-// BACKUP / IMPORTA
-// ═══════════════════════════════════════════════════════
+ 
 document.getElementById('btn-esporta-backup').addEventListener('click', async () => {
   const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
   if (!mazzo.length) { await customAlert('Il mazzo è vuoto, niente da salvare.'); return; }
@@ -1651,7 +1575,7 @@ document.getElementById('btn-esporta-backup').addEventListener('click', async ()
           const fh = await _cartellaHandle.getFileHandle(carta.nome, { create: true });
           const wr = await fh.createWritable();
           await wr.write(pngBlob); await wr.close();
-        } catch { /* ignora */ }
+        } catch { }
       } else {
         const url  = URL.createObjectURL(pngBlob);
         const link = document.createElement('a');
@@ -1659,15 +1583,15 @@ document.getElementById('btn-esporta-backup').addEventListener('click', async ()
         URL.revokeObjectURL(url);
         await new Promise(r => setTimeout(r, 300));
       }
-    } catch { /* ignora */ }
+    } catch { }
   }
   await customAlert('Backup completato: ' + mazzo.length + ' carte salvate.');
 });
-
+ 
 document.getElementById('btn-importa-backup').addEventListener('click', () => {
   document.getElementById('inp-backup').click();
 });
-
+ 
 document.getElementById('inp-backup').addEventListener('change', async event => {
   const file = event.target.files[0];
   event.target.value = '';
@@ -1675,13 +1599,12 @@ document.getElementById('inp-backup').addEventListener('change', async event => 
   try {
     const dati = JSON.parse(await file.text());
     if (!Array.isArray(dati)) { await customAlert('File non valido.'); return; }
-
-    // Assicura savedAt e shash su ogni carta importata
+ 
     const now         = Date.now();
     const datiSanati  = await Promise.all(
-      dati.map(async c => await garantisciShash({ ...c, savedAt: now })) // now: batte tombstone precedenti
+      dati.map(async c => await garantisciShash({ ...c, savedAt: now }))
     );
-
+ 
     const esistente = await localforage.getItem(CUSTOM_KEY) || [];
     if (esistente.length > 0) {
       const scelta = await customConfirm({
@@ -1689,14 +1612,12 @@ document.getElementById('inp-backup').addEventListener('change', async event => 
         okText: 'Sostituisci', cancelText: 'Unisci'
       });
       if (scelta) {
-        // Sostituisci: usa merge senza locale, solo backup (deduplicato)
         const mazzoFinale = await mergeMazzi({ locale: datiSanati, cloud: [], deleted: {} });
         await localforage.setItem(CUSTOM_KEY, mazzoFinale);
         await aggiornaListaCustom();
         await sync(true);
         await customAlert('Mazzo sostituito: ' + mazzoFinale.length + ' carte importate.');
       } else {
-        // Unisci: merge backup con locale esistente
         const mazzoFinale = await mergeMazzi({ locale: [...esistente, ...datiSanati], cloud: [], deleted: {} });
         const nuove       = mazzoFinale.length - esistente.length;
         await localforage.setItem(CUSTOM_KEY, mazzoFinale);
@@ -1713,18 +1634,14 @@ document.getElementById('inp-backup').addEventListener('change', async event => 
     }
   } catch(e) { await customAlert('Errore importazione:\n' + e.message); }
 });
-
-// ═══════════════════════════════════════════════════════
-// OVERLAY ISTRUZIONI E PRIVACY
-// ═══════════════════════════════════════════════════════
+ 
 (function() {
   const privacyOverlay    = document.getElementById('privacyOverlay');
   const istruzioniOverlay = document.getElementById('istruzioniOverlay');
   const disclaimerOverlay = document.getElementById('disclaimerOverlay');
-
-  // ── DISCLAIMER ──
+ 
   const DISCLAIMER_KEY = 'porky_age_ok';
-
+ 
   function mostraDisclaimer() {
     disclaimerOverlay.style.display = 'flex';
     document.body.style.overflow = 'hidden';
@@ -1733,7 +1650,6 @@ document.getElementById('inp-backup').addEventListener('change', async event => 
     sessionStorage.setItem(DISCLAIMER_KEY, '1');
     disclaimerOverlay.style.display = 'none';
     document.body.style.overflow = '';
-    // Se prima visita del giorno → apri le istruzioni
     const ora          = Date.now();
     const ultimaVisita = parseInt(localStorage.getItem('porky_last_visit') || '0');
     if (!ultimaVisita || (ora - ultimaVisita) > 24 * 60 * 60 * 1000) {
@@ -1748,14 +1664,12 @@ document.getElementById('inp-backup').addEventListener('change', async event => 
     disclaimerOverlay.style.background = 'rgba(0,0,0,0.97)';
     document.body.style.overflow = 'hidden';
   }
-
+ 
   document.getElementById('disclaimerSi').addEventListener('click', accettaDisclaimer);
   document.getElementById('disclaimerNo').addEventListener('click', rifiutaDisclaimer);
-
-  // Controlla se già accettato in questa sessione
+ 
   if (sessionStorage.getItem(DISCLAIMER_KEY) === '1') {
     disclaimerOverlay.style.display = 'none';
-    // Logica prima visita (normale flow)
     const ora          = Date.now();
     const ultimaVisita = parseInt(localStorage.getItem('porky_last_visit') || '0');
     if (!ultimaVisita || (ora - ultimaVisita) > 24 * 60 * 60 * 1000) {
@@ -1765,16 +1679,15 @@ document.getElementById('inp-backup').addEventListener('change', async event => 
   } else {
     mostraDisclaimer();
   }
-
-  // ── OVERLAY ISTRUZIONI E PRIVACY (invariati) ──
+ 
   document.getElementById('infoPrivacyBtn').addEventListener('click', () => { privacyOverlay.style.display = 'flex'; });
   document.getElementById('privacyClose').addEventListener('click',   () => { privacyOverlay.style.display = 'none'; });
   privacyOverlay.addEventListener('click', e => { if (e.target === privacyOverlay) privacyOverlay.style.display = 'none'; });
-
+ 
   document.getElementById('infoHelpBtn').addEventListener('click',     () => { istruzioniOverlay.style.display = 'flex'; });
   document.getElementById('istruzioniClose').addEventListener('click', () => { istruzioniOverlay.style.display = 'none'; });
   istruzioniOverlay.addEventListener('click', e => { if (e.target === istruzioniOverlay) istruzioniOverlay.style.display = 'none'; });
-
+ 
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
       if (istruzioniOverlay.style.display === 'flex') istruzioniOverlay.style.display = 'none';
@@ -1782,12 +1695,8 @@ document.getElementById('inp-backup').addEventListener('change', async event => 
     }
   });
 })();
-
-// ═══════════════════════════════════════════════════════
-// INIT
-// ═══════════════════════════════════════════════════════
+ 
 window.addEventListener('load', async () => {
-  // Converti l'immagine di sfondo in base64 per html2canvas
   const cardBg = document.getElementById('card-bg');
   await new Promise(resolve => {
     const xhr = new XMLHttpRequest();
@@ -1801,12 +1710,9 @@ window.addEventListener('load', async () => {
     xhr.onerror = () => resolve();
     xhr.send();
   });
-
-  // Se non loggato: mostra subito il mazzo locale
-  // Se loggato: onAuthStateChanged gestisce sync + render
+ 
   if (!auth.currentUser) {
     await aggiornaListaCustom();
-    // Ripristino automatico solo se mazzo vuoto e non loggato
     const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
     if (mazzo.length === 0) {
       if (await customConfirm({ message: 'Il mazzo è vuoto.\nVuoi importare un Backup Mazzo?', okText: 'SI', cancelText: 'NO' })) {
@@ -1815,7 +1721,6 @@ window.addEventListener('load', async () => {
     }
   }
 });
-
 </script>
 </body>
 </html>
