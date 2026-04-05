@@ -959,7 +959,13 @@ async function sync(silenzioso = true) {
     // ── 14. Scrivi mazzo_signal per notificare altri dispositivi ──
     // Separato da mazzo_meta → onSnapshot non triggera sync() su se stessa
     // Scritto sempre: garantisce che l'altro dispositivo riceva la notifica
-    await setDoc(base('mazzo_signal'), { t: now }).catch(() => {});
+    const maxSavedAt = mazzoFinale.reduce((m, c) => Math.max(m, c.savedAt || 0), 0);
+    const mazzoHash = mazzoFinale.length + '_' + maxSavedAt;
+    const ultimoHash = localStorage.getItem('porky_last_signal_hash') || '';
+    if (mazzoHash !== ultimoHash) {
+      await setDoc(base('mazzo_signal'), { t: now }).catch(() => {});
+      localStorage.setItem('porky_last_signal_hash', mazzoHash);
+    }
 
   } catch (e) {
     console.error('sync error:', e);
