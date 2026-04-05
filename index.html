@@ -773,7 +773,7 @@ async function rigeneraFullResSilente(mazzo) {
   let modificato = false;
 
   // Carte da rigenerare: solo quelle senza img e senza fullRes
-  const daRigenerare = mazzo.filter(c => (!c.fullRes) && c.testo && c.testo.trim());
+  const daRigenerare = mazzo.filter(c => c.testo && c.testo.trim() && (!c.fullRes || !c.img));
   if (!daRigenerare.length) return { mazzo, modificato };
 
   // Crea un clone nascosto di card-container fuori schermo
