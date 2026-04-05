@@ -814,66 +814,67 @@ async function mergeMazzi({ locale, cloud, deleted }) {
 // ═══════════════════════════════════════════════════════
 async function sync(silenzioso = true) {
   if (!_currentUser) return;
-  if (_syncBusy) return; // evita sync concorrenti
+  if (_syncBusy) return;
   _syncBusy = true;
 
   try {
-    const ref    = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo');
-    const now    = Date.now();
+    const ref = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo');
+    const now = Date.now();
 
-    // Leggi locale (assicura savedAt su tutte le carte)
+    // 1. Leggi locale
     let locale = (await localforage.getItem(CUSTOM_KEY) || []).map(c => ({
       ...c, savedAt: c.savedAt || now
     }));
 
-    // Leggi cloud
-    let cloudCarte  = [];
+    // 2. Leggi cloud
+    let cloudCarte   = [];
     let cloudDeleted = {};
     try {
       const snap = await getDoc(ref);
       if (snap.exists()) {
         const data   = snap.data();
-        cloudCarte   = data.carte   || [];
+        cloudCarte   = data.carte      || [];
         cloudDeleted = data.tombstones || {};
       }
-    } catch (_) { /* offline: usa solo locale */ }
+    } catch (_) { /* offline */ }
 
-    // Unisci tombstone locali + cloud, purga TTL
+    // 3. Merge tombstones
     const localDeleted = JSON.parse(localStorage.getItem('porky_deleted') || '{}');
     const deleted = purgaTombstones({ ...cloudDeleted, ...localDeleted });
     localStorage.setItem('porky_deleted', JSON.stringify(deleted));
 
-    // Merge
+    // 4. Merge bidirezionale
     const mazzoFinale = await mergeMazzi({ locale, cloud: cloudCarte, deleted });
 
-    // Salva locale
+    // 5. Salva locale
     await localforage.setItem(CUSTOM_KEY, mazzoFinale);
     await aggiornaListaCustom();
 
-    // Scrivi cloud carta per carta (evita oversize)
-    const mazzoDocRef = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo');
-    const carteCollectionRef = collection(mazzoDocRef, 'carte');
-    
-    for (const c of mazzoFinale) {
-      const { _inModifica, ...rest } = c;
-      const cartaCloud = { ...rest, img: await comprimiImgPerCloud(c.img) };
-    
-      await setDoc(doc(carteCollectionRef, c.shash || crypto.randomUUID()), cartaCloud, { merge: true });
+    // 6. Comprimi immagini per cloud (in parallelo, max 5 alla volta)
+    const BATCH_SIZE = 5;
+    const carteCloud = [];
+    for (let i = 0; i < mazzoFinale.length; i += BATCH_SIZE) {
+      const batch = mazzoFinale.slice(i, i + BATCH_SIZE);
+      const compresse = await Promise.all(batch.map(async c => {
+        const { _inModifica, ...rest } = c;
+        return { ...rest, img: await comprimiImgPerCloud(c.img) };
+      }));
+      carteCloud.push(...compresse);
     }
-    
-    // Aggiorna solo tombstones in un documento separato
+
+    // 7. Scrivi su cloud — tutto in un unico setDoc
     const shashNelMazzo = new Set(mazzoFinale.map(c => c.shash).filter(Boolean));
     const deletedPulito = Object.fromEntries(
       Object.entries(deleted).filter(([shash]) => !shashNelMazzo.has(shash))
     );
     localStorage.setItem('porky_deleted', JSON.stringify(deletedPulito));
-    
-    await setDoc(
-      doc(db, 'users', _currentUser.uid, 'backup', 'mazzo_tombstones'),
-      { tombstones: deletedPulito, aggiornato: now },
-      { merge: true }
-    );
-    
+
+    await setDoc(ref, {
+      carte:      carteCloud,
+      tombstones: deletedPulito,
+      aggiornato: now
+    });
+
   } catch(e) {
     console.error('sync error:', e);
   } finally {
