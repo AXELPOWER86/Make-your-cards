@@ -1,0 +1,1846 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="minimum-scale=0.2, maximum-scale=5.0, user-scalable=yes">
+<link href="images/icon-180.png" rel="apple-touch-icon">
+<title>Porky's Game® - Editor Carte</title>
+<style>
+  @font-face {
+    font-family: 'Carlito';
+    src: url('Carlito-Bold.ttf') format('truetype');
+    font-weight: bold;
+    font-style: normal;
+  }
+</style>
+<script src="./js/html2canvas.min.js"></script>
+<script src="./js/localforage.min.js"></script>
+<style>
+* {
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  box-sizing: border-box;
+}
+* { scrollbar-width: none; }
+*::-webkit-scrollbar { width: 0; height: 0; }
+::selection { background: transparent; }
+::-moz-selection { background: transparent; }
+textarea::selection { background: rgba(80,35,105,0.3); }
+textarea::-moz-selection { background: rgba(80,35,105,0.3); }
+input, textarea {
+  user-select: text;
+  -webkit-user-select: text;
+}
+html { scrollbar-width: none; overflow-y: auto; }
+html::-webkit-scrollbar, body::-webkit-scrollbar { width:0; height:0; }
+
+body {
+  font-family: 'Carlito', Arial, sans-serif;
+  text-align: center;
+  min-height: 100vh;
+  background: linear-gradient(rgba(215,175,90,0.85), rgba(215,175,90,0.85)), url("images/logo_splash.png");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: cover;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 18px 12px 40px;
+  gap: 14px;
+  background-attachment: fixed;
+}
+
+h1 { margin-top: 10px; font-size: 24px; color: #502369; }
+.description { font-size: 15px; margin: 0; color: #333; font-weight: bold; }
+
+#login-bar {
+  width: 100%; max-width: 900px; background: #f9e0a7;
+  border: 3px solid #502369; border-radius: 10px; padding: 8px 16px;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  font-size: 14px; color: #502369; font-weight: bold;
+}
+#login-bar img { width: 28px; height: 28px; border-radius: 50%; }
+#login-bar .spacer { flex: 1; }
+
+.layout {
+  display: flex; gap: 24px; align-items: flex-start;
+  justify-content: center; flex-wrap: wrap;
+  width: 100%; max-width: 900px;
+}
+
+.controls {
+  background: #f9e0a7; border: 4px solid #502369; border-radius: 14px;
+  padding: 20px; width: 300px; flex-shrink: 0;
+  display: flex; flex-direction: column; gap: 14px;
+  box-shadow: 0 0 15px rgba(0,0,0,0.25);
+}
+.controls h2 { color: #502369; font-size: 17px; margin: 0; border-bottom: 2px solid #502369; padding-bottom: 8px; }
+
+label { display: block; font-size: 13px; font-weight: bold; color: #502369; margin-bottom: 4px; text-align: left; }
+
+textarea {
+  width: 100%; background: #fff; border: 2px solid #502369; border-radius: 8px;
+  color: #333; font-family: 'Carlito', Arial, sans-serif; font-weight: bold;
+  font-size: 1rem; padding: 8px 10px; resize: vertical; min-height: 180px;
+  outline: none; line-height: 1.4; transition: border-color 0.2s, box-shadow 0.2s;
+}
+textarea:focus { border-color: #9b59b6; box-shadow: 0 0 6px rgba(80,35,105,0.3); }
+.hint { font-size: 12px; color: #666; font-style: italic; text-align: center; margin-top: -6px; }
+
+button {
+  padding: 10px; margin: 0; font-size: 16px; border: none;
+  border-radius: 6px; cursor: pointer; font-weight: bold; width: 100%;
+  transition: filter .15s ease, transform .15s ease;
+}
+.btn-dl { background: linear-gradient(145deg, #a45de6, #6f2aa8); color: white; }
+.btn-dl:hover { filter: brightness(1.15); transform: scale(1.03); }
+.btn-reset { background: linear-gradient(145deg, #d64040, #8f1212); color: #fff; }
+.btn-reset:hover { filter: brightness(1.15); transform: scale(1.03); }
+
+.spinner {
+  display: none; width: 18px; height: 18px;
+  border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff;
+  border-radius: 50%; animation: spin 0.6s linear infinite; margin: 0 auto;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.btn-dl.loading .lbl { display: none; }
+.btn-dl.loading .spinner { display: block; }
+
+.btn {
+  background: linear-gradient(145deg, #dfad24, #9b710e); color: #3b2500;
+  border: none; border-radius: 6px; padding: 6px 12px;
+  font-size: 13px; font-weight: bold; cursor: pointer; width: auto;
+}
+.reset {
+  background: linear-gradient(145deg, #d64040, #8f1212); color: #fff;
+  border: none; border-radius: 6px; padding: 6px 12px;
+  font-size: 13px; font-weight: bold; cursor: pointer; width: auto;
+}
+
+.preview-label { font-size: 20px; font-weight: bold; color: #502369; margin-bottom: 4px; }
+
+#card-container {
+  position: relative; width: 360px; aspect-ratio: 800 / 1248;
+  flex-shrink: 0; border-radius: 14px; overflow: hidden;
+  box-shadow: 0 0 20px rgba(80,35,105,0.4);
+}
+#card-bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; display: block; }
+#card-text-layer {
+  position: absolute; top: 8%; left: 8%; right: 8%; bottom: 4%;
+  display: flex; flex-direction: column; align-items: center;
+  overflow: hidden; pointer-events: none;
+}
+#card-body {
+  font-family: 'Carlito', Arial, sans-serif; font-weight: 900; color: #f5e6c8;
+  text-align: center; width: 100%; flex: 1; display: flex;
+  align-items: center; justify-content: center; overflow: hidden; padding: 0 4px;
+}
+#card-body-inner {
+  font-family: 'Carlito', Arial, Helvetica, sans-serif;
+  font-weight: 900; color: #f5e6c8; text-align: center;
+  line-height: 1.15; word-break: normal; overflow-wrap: normal;
+  white-space: pre-wrap; text-shadow: 0 1px 4px rgba(0,0,0,0.5);
+  display: block; width: 100%;
+  padding: 0 4px 0 0;
+}
+
+.mazzo-section {
+  width: 100%; max-width: 900px; background: #f9e0a7;
+  border: 4px solid #502369; border-radius: 14px; padding: 14px 16px;
+  box-shadow: 0 0 15px rgba(0,0,0,0.25);
+}
+.mazzo-header {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
+  flex-wrap: wrap; font-weight: bold; color: #502369; font-size: 16px;
+  border-bottom: 2px solid #502369; padding-bottom: 8px;
+}
+.mazzo-count { background: #502369; color: #f9e0a7; border-radius: 20px; padding: 2px 10px; font-size: 13px; }
+.btn-cancella-tutto {
+  margin-left: auto; background: linear-gradient(145deg, #d64040, #8f1212);
+  color: #fff; border: none; border-radius: 6px; padding: 6px 12px;
+  font-size: 13px; font-weight: bold; cursor: pointer; width: auto;
+}
+#lista-custom { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-start; min-height: 30px; }
+
+.card-item { display: flex; flex-direction: column; align-items: center; gap: 3px; width: 54px; }
+.card-item img { width: 54px; border-radius: 5px; border: 2px solid #502369; cursor: pointer; display: block; }
+.card-item-btns { display: flex; gap: 2px; width: 100%; }
+.card-item-btns button { flex: 1; font-size: 11px; padding: 2px 0; border: none; border-radius: 3px; cursor: pointer; font-weight: bold; width: auto; }
+.card-item-btns .btn-mod { background: #a45de6; color: #fff; }
+.card-item-btns .btn-del { background: #d64040; color: #fff; }
+
+.file-status { font-size: 11px; color: #666; margin-top: 4px; text-align: center; }
+.file-status.ok { color: #1a8a47; }
+input[type="file"] { display: none; }
+
+#communityOverlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.7);
+  display: none; align-items: center; justify-content: center; z-index: 20000;
+}
+#cardDetailOverlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.75);
+  display: none; align-items: center; justify-content: center;
+  z-index: 45000; padding: 18px;
+}
+#cardDetailBox {
+  background: #f9e0a7; border: 4px solid #502369; border-radius: 14px;
+  display: flex; flex-direction: column; align-items: center;
+  gap: 14px; padding: 16px; width: min(380px, 92vw);
+  box-shadow: 0 20px 60px rgba(0,0,0,.4);
+  max-height: 90vh; overflow-y: auto;
+}
+#cardDetailBox .detail-header {
+  width: 100%; display: flex; align-items: center; justify-content: space-between;
+  font-size: 16px; font-weight: 900; color: #502369;
+  border-bottom: 2px solid #502369; padding-bottom: 8px;
+}
+#cardDetailBox .detail-close {
+  border: none; border-radius: 8px; padding: 5px 10px;
+  background: rgba(145,1,1,.95); color: #fff;
+  font-weight: 900; cursor: pointer; font-size: 14px; width: auto;
+}
+#cardDetailContainer {
+  position: relative; width: min(320px, 80vw);
+  aspect-ratio: 800 / 1248; border-radius: 12px; overflow: hidden;
+  box-shadow: 0 0 18px rgba(80,35,105,0.4); flex-shrink: 0;
+}
+#cardDetailBg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; display: block; }
+
+#cardDetailContainer {
+  width: min(300px, 78vw);
+  border-radius: 12px; overflow: hidden;
+  box-shadow: 0 0 18px rgba(80,35,105,0.4); flex-shrink: 0;
+}
+#cardDetailContainer img {
+  width: 100%; display: block; border-radius: 12px;
+}
+#cardDetailBtns {
+  display: flex; flex-direction: column; gap: 10px; width: 100%;
+}
+#cardDetailBtns button {
+  width: 100%; font-size: 16px; padding: 12px;
+}
+#communityBox {
+  background: #f9e0a7; border: 4px solid #502369; border-radius: 14px;
+  padding: 20px; width: 90vw; max-width: 800px; max-height: 85vh;
+  display: flex; flex-direction: column; gap: 12px;
+}
+#communityBox h2 { color: #502369; margin: 0; font-size: 18px; border-bottom: 2px solid #502369; padding-bottom: 8px; }
+#community-search {
+  width: 100%; padding: 8px 12px; border: 2px solid #502369; border-radius: 8px;
+  font-size: 14px; font-family: 'Carlito', Arial, sans-serif;
+  background: #fff; color: #333; outline: none;
+  user-select: text; -webkit-user-select: text;
+}
+#community-grid {
+  display: flex; flex-wrap: wrap; gap: 10px;
+  overflow-y: auto; flex: 1; min-height: 200px;
+  justify-content: flex-start; padding: 4px;
+}
+.community-card { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 80px; cursor: pointer; }
+.community-card img { width: 80px; border-radius: 6px; border: 2px solid #502369; display: block; }
+.community-card .c-testo { font-size: 9px; color: #502369; text-align: center; font-weight: bold; max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.community-card .c-likes { font-size: 10px; color: #9b710e; font-weight: bold; }
+.community-card .c-btns { display: flex; gap: 3px; width: 100%; }
+.community-card .c-btns button { flex: 1; font-size: 10px; padding: 2px 0; border: none; border-radius: 3px; cursor: pointer; font-weight: bold; width: auto; }
+.community-card .c-import { background: #3498db; color: #fff; }
+.community-card .c-like { background: #e67e22; color: #fff; }
+#community-status { font-size: 13px; color: #502369; font-style: italic; text-align: center; }
+
+.sheet-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.65);
+  display: none; align-items: center; justify-content: center;
+  z-index: 40000; padding: 18px;
+}
+.sheet-box {
+  width: min(900px, 95vw); max-height: 85vh; background: #f9e0a7;
+  border: 4px solid #502369; border-radius: 14px; overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0,0,0,.35); display: flex; flex-direction: column;
+}
+.sheet-header {
+  background: linear-gradient(145deg, #dfad24, #9b710e); padding: 12px 14px;
+  color: #502369; font-weight: 900; display: flex; align-items: center; justify-content: space-between;
+}
+.sheet-title { flex: 1; text-align: center; font-size: 18px; }
+.sheet-close {
+  border: none; border-radius: 10px; padding: 6px 10px; cursor: pointer;
+  background: rgba(145,1,1,.95); color: white; font-weight: 900; width: auto; flex: 0 0 auto;
+}
+.sheet-body {
+  padding: 16px; overflow-y: auto; color: #502369; font-weight: 700;
+  line-height: 1.55; font-size: 13px; text-align: left; scrollbar-width: none;
+}
+.sheet-body::-webkit-scrollbar { width: 0; height: 0; }
+.sheet-body ul { margin: 10px 0 0 18px; padding: 0; text-align: left; }
+.sheet-body li { margin: 10px 0; text-align: left; }
+
+#infoPrivacyBtn {
+  position: fixed; right: 80px; bottom: 14px; width: 52px; height: 52px;
+  border-radius: 50%; background: #f9e0a7; border: 3px solid #502369;
+  color: #502369; font-size: 22px; font-weight: 900;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; z-index: 30000; box-shadow: 0 16px 40px rgba(0,0,0,.25); user-select: none;
+}
+#infoPrivacyBtn:active { transform: scale(0.96); }
+
+#infoHelpBtn {
+  position: fixed; left: 80px; bottom: 14px; width: 52px; height: 52px;
+  border-radius: 50%; background: #f9e0a7; border: 3px solid #502369;
+  color: #502369; font-size: 22px; font-weight: 900;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; z-index: 30000; box-shadow: 0 16px 40px rgba(0,0,0,.25); user-select: none;
+}
+#infoHelpBtn:active { transform: scale(0.96); }
+
+#modalOverlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.6);
+  display: none; align-items: center; justify-content: center; z-index: 30000;
+}
+#modalBox {
+  background: #f9e0a7; border: 4px solid #502369; border-radius: 14px;
+  padding: 25px; min-width: 280px; max-width: 80vw;
+  text-align: center; font-size: 18px; color: #502369;
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+}
+/* ── DISCLAIMER ── */
+#disclaimerOverlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.88);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 50000; padding: 18px;
+  pointer-events: all;
+}
+#disclaimerBox {
+  background: #f9e0a7; border: 4px solid #502369; border-radius: 14px;
+  padding: 30px 24px; max-width: 480px; width: 100%;
+  text-align: center; display: flex; flex-direction: column;
+  align-items: center; gap: 16px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.5);
+  pointer-events: all;
+}
+#disclaimerIcon { font-size: 52px; line-height: 1; }
+#disclaimerTitle {
+  font-size: 20px; font-weight: 900; color: #8b0000;
+  border-bottom: 2px solid #502369; padding-bottom: 10px; width: 100%;
+}
+#disclaimerText {
+  font-size: 15px; color: #502369; font-weight: 700; line-height: 1.6;
+}
+#disclaimerBtns {
+  display: flex; gap: 14px; flex-wrap: wrap; justify-content: center;
+  width: 100%; margin-top: 4px;
+}
+#disclaimerBtns button {
+  font-family: 'Carlito', Arial, sans-serif; font-weight: 900;
+  font-size: 15px; padding: 12px 22px; border: none;
+  border-radius: 10px; cursor: pointer; flex: 1; min-width: 140px;
+  box-shadow: 0 4px 12px rgba(0,0,0,.2); transition: transform .1s;
+  pointer-events: all; position: relative; z-index: 50001;
+}
+#disclaimerBtns button:active { transform: scale(0.96); }
+#disclaimerSi {
+  background: linear-gradient(145deg, #2ecc71, #1a8a47); color: #fff;
+}
+#disclaimerNo {
+  background: linear-gradient(145deg, #c0392b, #7b0000); color: #fff;
+}
+</style>
+</head>
+<body>
+<!-- ═══ DISCLAIMER ADULTI ═══ -->
+<div id="disclaimerOverlay">
+  <div id="disclaimerBox">
+    <div id="disclaimerIcon">🔞</div>
+    <div id="disclaimerTitle">Accesso vietato ai minori di 18 anni!</div>
+    <div id="disclaimerText">
+      Questa pagina potrebbe contenere frasi sessualmente esplicite.<br><br>
+      Dichiari di avere almeno <strong>18 anni</strong> e di non essere suscettibile a tali argomenti?
+    </div>
+    <div id="disclaimerBtns">
+      <button id="disclaimerSi" onclick="
+        sessionStorage.setItem('porky_age_ok','1');
+        document.getElementById('disclaimerOverlay').style.display='none';
+        document.body.style.overflow='';
+      ">✅ Sì, ho 18+ anni</button>
+      <button id="disclaimerNo" onclick="
+        document.getElementById('disclaimerOverlay').innerHTML='<div style=\'color:#fff;text-align:center;font-size:18px;font-weight:bold;padding:40px;\'>🔞 Accesso negato.<br><br>Questa pagina non è accessibile.</div>';
+        document.getElementById('disclaimerOverlay').style.background='rgba(0,0,0,0.97)';
+        document.body.style.overflow='hidden';
+      ">❌ No, esci</button>
+    </div>
+  </div>
+</div>
+<h1>Porky's Game® - Editor Carte</h1>
+<p class="description">Crea le tue carte personalizzate per il mazzo</p>
+
+<div id="login-bar">
+  <span id="login-info">Non connesso</span>
+  <div class="spacer"></div>
+  <button class="btn" id="btn-community" style="display:none;">🌐 Community</button>
+  <button class="btn" id="btn-login">🔑 Accedi con Google</button>
+  <button class="reset" id="btn-logout" style="display:none;">Esci</button>
+</div>
+
+<div class="layout">
+  <div>
+    <div class="preview-label">Anteprima</div>
+    <div id="card-container">
+      <img id="card-bg" src="porkys_tarot_BLANK.png" alt="carta" crossorigin="anonymous">
+      <div id="card-text-layer">
+        <div id="card-body"><span id="card-body-inner"></span></div>
+      </div>
+    </div>
+    <div id="preview-share-wrap" style="margin-top:10px;display:none;">
+      <button id="btn-condividi-preview" class="btn-dl"
+        style="background:linear-gradient(145deg,#2ecc71,#1a8a47);width:100%;max-width:360px;">
+        🌐 Condividi in community
+      </button>
+    </div>
+  </div>
+
+  <div class="controls">
+    <h2>✏️ Testo della carta</h2>
+    <div>
+      <label for="inp-body">Scrivi il testo:</label>
+      <textarea id="inp-body" style="text-align:center;"
+        placeholder="&#10;&#10;&#10;SCRIVI IL TESTO DELLA CARTA&#10;QUI"></textarea>
+      <div class="hint"><br>Il testo si adatta automaticamente alle dimensioni della carta</div>
+    </div>
+    <button class="btn-dl" id="btn-dl">
+      <span class="lbl">⬇ Scarica PNG</span>
+      <div class="spinner"></div>
+    </button>
+    <button class="btn-dl" id="btn-salva" style="background:linear-gradient(145deg,#2ecc71,#1a8a47);">
+      <span class="lbl">💾 Salva nel mazzo</span>
+      <div class="spinner"></div>
+    </button>
+    <button class="btn-reset" id="btn-reset-testo">🗑 Cancella testo</button>
+    <button class="btn-reset" id="btn-elimina-modifica" style="display:none;background:linear-gradient(145deg,#d64040,#8f1212);">🗑 Elimina carta</button>
+    <div style="border-top:2px solid #502369;padding-top:12px;">
+      <label>🃏 Sfondo carta:</label>
+      <button class="btn-dl" id="btn-carica-sfondo"
+        style="background:linear-gradient(145deg,#dfad24,#9b710e);color:#3b2500;">
+        📂 Carica sfondo carta
+      </button>
+      <input type="file" id="inp-carta" accept="image/png,image/jpeg,image/webp">
+      <div class="file-status" id="status-carta">nessun file caricato</div>
+    </div>
+  </div>
+</div>
+
+<div class="mazzo-section">
+  <div class="mazzo-header">
+    <span>🃏 Mazzo personalizzato</span>
+    <span class="mazzo-count"><span id="contatore-custom">0</span> carte</span>
+    <input type="text" id="cerca-mazzo" placeholder="🔍 Cerca nel mazzo..."
+      style="padding:4px 10px;border:2px solid #502369;border-radius:6px;
+      font-family:'Carlito',Arial,sans-serif;font-weight:bold;font-size:13px;
+      color:#502369;background:#fff;outline:none;width:150px;">
+    <button class="btn-cancella-tutto" id="btn-cancella-tutto">🗑 Cancella tutto</button>
+    <button class="btn-cancella-tutto" id="btn-esporta-backup"
+      style="background:linear-gradient(145deg,#2ecc71,#1a8a47);margin-left:0;">
+      💾 Backup Mazzo
+    </button>
+    <button class="btn-cancella-tutto" id="btn-importa-backup"
+      style="background:linear-gradient(145deg,#3498db,#1a5a8a);margin-left:0;">
+      📂 Importa backup
+    </button>
+    <input type="file" id="inp-backup" accept=".json">
+  </div>
+  <div id="lista-custom"></div>
+</div>
+
+<div id="communityOverlay">
+  <div id="communityBox">
+    <h2>🌐 Community Porky's Game</h2>
+    <input type="text" id="community-search" placeholder="Cerca per testo..." autocomplete="off">
+    <div id="community-status">Caricamento carte...</div>
+    <div id="community-grid"></div>
+    <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
+      <button class="btn" id="btn-chiudi-community">✕ Chiudi</button>
+    </div>
+  </div>
+</div>
+
+<div id="cardDetailOverlay">
+  <div id="cardDetailBox">
+    <div class="detail-header">
+      <span id="cardDetailLikes">❤️ 0</span>
+      <span>🃏 Carta Community</span>
+      <button class="detail-close" id="cardDetailClose">✕</button>
+    </div>
+    <div id="cardDetailContainer">
+      <img id="cardDetailBg" src="" alt="carta">
+    </div>
+    <div id="cardDetailBtns">
+      <button class="btn-dl" id="cardDetailImport"
+        style="background:linear-gradient(145deg,#3498db,#1a5a8a);">
+        ⬇ Scarica nel mazzo
+      </button>
+      <button class="btn-dl" id="cardDetailLike"
+        style="background:linear-gradient(145deg,#e67e22,#a0530e);">
+        ❤ Like
+      </button>
+      <button class="btn-dl" id="cardDetailDelete"
+        style="background:linear-gradient(145deg,#d64040,#8f1212);display:none;">
+        🗑 Elimina dalla community
+      </button>
+    </div>
+  </div>
+</div>
+
+<div id="modalOverlay">
+  <div id="modalBox">
+    <div id="modalText" style="white-space:pre-line;"></div>
+    <div id="modalExtra" style="display:none;gap:10px;width:100%;"></div>
+    <div id="modalBtns" style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
+      <button id="modalOk" class="reset">SI</button>
+      <button id="modalCancel" class="btn">NO</button>
+      <button id="modalNotif" class="btn">OK</button>
+    </div>
+  </div>
+</div>
+
+<div id="infoHelpBtn" title="Istruzioni">?</div>
+<div id="infoPrivacyBtn" title="Privacy e Credits">i</div>
+
+<div id="istruzioniOverlay" class="sheet-overlay" role="dialog" aria-modal="true">
+  <div class="sheet-box">
+    <div class="sheet-header">
+      <div style="width:40px;"></div>
+      <div class="sheet-title">📝 Come creare una carta</div>
+      <button id="istruzioniClose" class="sheet-close">✕</button>
+    </div>
+    <div class="sheet-body">
+      <ul>
+        <li>Scrivi il testo della carta nel campo apposito: si adatterà automaticamente alle dimensioni della carta</li>
+        <li>Clicca ⬇ Scarica PNG per salvare la carta nella tua galleria</li>
+        <li>Clicca 💾 Salva nel mazzo per aggiungere la carta al tuo mazzo personalizzato</li>
+        <li>Clicca 🗑 Cancella testo per pulire il campo di testo</li>
+        <li>Clicca 🗑 Cancella tutto per eliminare tutte le carte del mazzo</li>
+        <li>Clicca 💾 Backup Mazzo per scaricare tutte le carte (JSON + PNG)</li>
+        <li>Clicca 📂 Importa backup per ripristinare un mazzo da file JSON</li>
+        <li>Clicca sulla carta o su ✏️ per modificarla, clicca una seconda volta per deselezionarla</li>
+        <li>Clicca 🌐 Condividi in community per condividere la carta selezionata</li>
+        <li>Clicca 🗑 accanto alla carta per eliminarla dal mazzo</li>
+        <li>☁️ Accedi con Google per il backup automatico nel cloud (necessario anche per condividere)</li>
+        <li>Opzionale: carica uno sfondo personalizzato tramite 📂 Carica sfondo carta</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div id="privacyOverlay" class="sheet-overlay" role="dialog" aria-modal="true">
+  <div class="sheet-box">
+    <div class="sheet-header">
+      <div style="width:40px;"></div>
+      <div class="sheet-title">🔒 Informativa privacy e Credits</div>
+      <button id="privacyClose" class="sheet-close">✕</button>
+    </div>
+    <div class="sheet-body">
+      <p><b>Porky's Game® — Editor Carte</b> non raccoglie dati per analisi, statistiche o attività di tracciamento.</p>
+      <p>I dati del mazzo personalizzato vengono salvati esclusivamente in locale sul tuo dispositivo tramite localForage.
+         Se effettui l'accesso con Google, una copia di backup viene sincronizzata sul tuo account Firebase personale e non è accessibile ad altri utenti.</p>
+      <p>Solo in caso di condivisione volontaria con la community, gli altri utenti potranno vedere le tue carte.</p>
+      <ul>
+        <li><b>Credits:</b> Immagini realizzate con AI e poi perfezionate. Audio recuperati da Myinstants (https://www.myinstants.com).</li>
+        <li>The MIT License — html2canvas 1.4.1 &lt;https://html2canvas.hertzen.com&gt;<br>
+        Copyright (c) 2022 Niklas von Hertzen. Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files, to deal in the Software without restriction. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.</li>
+        <li>The MIT License — localForage 1.x — Copyright (c) 2013-2016 Mozilla. Same MIT terms as above.</li>
+        <li>Carlito font by Łukasz Dziedzic — SIL Open Font License 1.1. Source: https://fonts.google.com/specimen/Carlito</li>
+        <li>Firebase SDK — Copyright (c) Google LLC — Apache License 2.0. https://firebase.google.com/terms</li>
+      </ul>
+      <p>L'accesso alla fotocamera o alla galleria è richiesto esclusivamente per caricare immagini di sfondo personalizzate.
+         Solo l'Admin della pagina può vedere il nome utente di chi ha condiviso una carta.</p>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+// ═══════════════════════════════════════════════════════
+// IMPORT FIREBASE
+// ═══════════════════════════════════════════════════════
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
+  from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
+import { getFirestore, doc, setDoc, getDoc, collection, getDocs,
+         addDoc, updateDoc, deleteDoc, increment, arrayUnion, query, orderBy, limit, onSnapshot }
+  from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+ 
+const firebaseConfig = {
+  apiKey: "AIzaSyAuZHO-xS2IJKETIUpn8UF9vF898WZflJ4",
+  authDomain: "community-carte-porky-s-game.firebaseapp.com",
+  projectId: "community-carte-porky-s-game",
+  storageBucket: "community-carte-porky-s-game.firebasestorage.app",
+  messagingSenderId: "249739861540",
+  appId: "1:249739861540:web:c14d3b728e0b31c9b142b1"
+};
+ 
+const app  = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db   = getFirestore(app);
+ 
+const CUSTOM_KEY       = 'mazzo_custom';
+const TOMBSTONE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const ADMIN_UID        = '6PF8IUUL2IZLXj8v82yHM133vvg2';
+ 
+let _currentUser    = null;
+let _communityCards = [];
+let _cartellaHandle = null;
+let _syncTimer      = null;
+let _unsubscribe    = null;
+let _syncBusy       = false;
+let _syncScheduled = null;
+ 
+localforage.config({ name: 'PorkysGame', storeName: 'mazzo_carte' });
+ 
+function modalDialog(cfgOrMessage, type = 'alert') {
+  const cfg = (typeof cfgOrMessage === 'string') ? { message: cfgOrMessage } : (cfgOrMessage || {});
+  const { message = '', okText = 'SI', cancelText = 'NO', alertText = 'OK', buttons = [], cancelValue = null } = cfg;
+  return new Promise(resolve => {
+    const overlay   = document.getElementById('modalOverlay');
+    const textEl    = document.getElementById('modalText');
+    const extra     = document.getElementById('modalExtra');
+    const okBtn     = document.getElementById('modalOk');
+    const cancelBtn = document.getElementById('modalCancel');
+    const notifBtn  = document.getElementById('modalNotif');
+ 
+    extra.innerHTML = ''; extra.style.display = 'none';
+    okBtn.style.display = cancelBtn.style.display = notifBtn.style.display = 'none';
+    textEl.textContent = message;
+ 
+    const OK = okBtn.cloneNode(true);    okBtn.replaceWith(OK);
+    const CA = cancelBtn.cloneNode(true); cancelBtn.replaceWith(CA);
+    const NO = notifBtn.cloneNode(true);  notifBtn.replaceWith(NO);
+ 
+    function cleanup() {
+      overlay.style.display = '';
+      overlay.style.transform = '';
+      overlay.style.transformOrigin = '';
+      extra.innerHTML = ''; extra.style.display = 'none';
+      document.removeEventListener('keydown', onKey);
+    }
+    function close(v) { cleanup(); resolve(v); }
+    function onKey(e) {
+      if (e.key === 'Escape') {
+        if (type === 'alert')   return close(true);
+        if (type === 'confirm') return close(false);
+        if (type === 'choice')  return close(cancelValue);
+      }
+      if (e.key === 'Enter' && (type === 'alert' || type === 'confirm')) return close(true);
+    }
+    function mostraOverlay(focusFn) {
+      overlay.style.display = 'flex';
+      requestAnimationFrame(() => {
+        const vv = window.visualViewport;
+        if (vv && Math.abs(vv.scale - 1) > 0.01) {
+          const s = 1 / vv.scale;
+          overlay.style.transform = `scale(${s})`;
+          overlay.style.transformOrigin = `${vv.offsetLeft + vv.width/2}px ${vv.offsetTop + vv.height/2}px`;
+        }
+        if (focusFn) focusFn();
+      });
+    }
+    document.addEventListener('keydown', onKey);
+ 
+    if (type === 'alert') {
+      NO.style.display = 'inline-block'; NO.textContent = alertText;
+      NO.addEventListener('click', () => close(true));
+      mostraOverlay(() => NO.focus()); return;
+    }
+    if (type === 'confirm') {
+      OK.style.display = CA.style.display = 'inline-block';
+      OK.textContent = okText; CA.textContent = cancelText;
+      OK.addEventListener('click', () => close(true));
+      CA.addEventListener('click', () => close(false));
+      mostraOverlay(() => OK.focus()); return;
+    }
+    if (type === 'choice') {
+      extra.style.display = 'grid'; extra.style.gap = '10px';
+      extra.style.gridTemplateColumns = 'repeat(2, minmax(120px, 1fr))';
+      for (const b of buttons) {
+        const btn = document.createElement('button');
+        btn.textContent = b.text || 'OK';
+        btn.className = b.className === 'reset' ? 'btn-reset' : 'btn-dl';
+        btn.style.cssText = 'width:100%;padding:8px;font-size:14px;';
+        btn.addEventListener('click', () => close(b.value));
+        extra.appendChild(btn);
+      }
+      mostraOverlay(null); return;
+    }
+    close(cancelValue);
+  });
+}
+const customAlert   = msg => modalDialog(msg, 'alert');
+const customConfirm = cfg => modalDialog(cfg, 'confirm');
+ 
+async function sha256String(str) {
+  const buf    = new TextEncoder().encode(str);
+  const digest = await crypto.subtle.digest('SHA-256', buf);
+  return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+ 
+async function garantisciShash(carta) {
+  if (carta.shash && carta.shash.trim()) return carta;
+  const base = carta.testo
+    ? carta.testo.toUpperCase().trim()
+    : (carta.nome || '') + Date.now() + Math.random();
+  return { ...carta, shash: await sha256String(base) };
+}
+ 
+function normalizzaTesto(t) {
+  return t.toUpperCase()
+          .replace(/[^\wÀÈÉÌÒÙàèéìòù\s]/g, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+}
+ 
+function comprimiImgPerCloud(dataUrl) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      // Ridimensiona a max 520px per stare abbondantemente sotto 1MB Firestore
+      const MAX    = 520;
+      const ratio  = Math.min(MAX / img.width, MAX / img.height, 1);
+      const canvas = document.createElement('canvas');
+      canvas.width  = Math.round(img.width  * ratio);
+      canvas.height = Math.round(img.height * ratio);
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+ 
+      // ~80KB per carta → chunk da 20 carte = ~1.6MB → con margine sicuro
+      const LIMIT = 80 * 1024;
+      const qualita = [0.92, 0.85, 0.78, 0.70];
+      for (const q of qualita) {
+        const jpg = canvas.toDataURL('image/jpeg', q);
+        if (jpg.length <= LIMIT) { resolve(jpg); return; }
+      }
+      resolve(canvas.toDataURL('image/jpeg', 0.70));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+ 
+function purgaTombstones(deleted) {
+  const now = Date.now();
+  const out = {};
+  for (const [s, ts] of Object.entries(deleted || {})) {
+    if (now - ts < TOMBSTONE_TTL_MS) out[s] = ts;
+  }
+  return out;
+}
+ 
+async function mergeMazzi({ locale, cloud, deleted }) {
+  locale = await Promise.all(locale.map(garantisciShash));
+  cloud  = await Promise.all(cloud.map(garantisciShash));
+ 
+  const deletedMap = deleted || {};
+  const map = new Map();
+ 
+  for (const c of locale) {
+    const ts = deletedMap[c.shash];
+    if (ts && (c.savedAt || 0) <= ts) continue;
+    if (map.has(c.shash)) {
+      const existing = map.get(c.shash);
+      if ((c.savedAt || 0) > (existing.savedAt || 0)) map.set(c.shash, { ...c });
+    } else {
+      map.set(c.shash, { ...c });
+    }
+  }
+ 
+  for (const cc of cloud) {
+    const ts = deletedMap[cc.shash];
+    if (ts && (cc.savedAt || 0) <= ts) continue;
+    if (!map.has(cc.shash)) {
+      map.set(cc.shash, { ...cc });
+    } else {
+      const loc = map.get(cc.shash);
+      if ((cc.savedAt || 0) > (loc.savedAt || 0)) {
+        map.set(cc.shash, { ...cc, img: loc.img });
+      }
+    }
+  }
+ 
+  return [...map.values()].map(c =>
+    JSON.parse(JSON.stringify(c))
+  );
+}
+ 
+async function rigeneraFullResSilente(mazzo) {
+  let modificato = false;
+
+  // Carte da rigenerare: solo quelle senza img e senza fullRes
+  const daRigenerare = mazzo.filter(c => c.testo && c.testo.trim() && (!c.fullRes || !c.img));
+  if (!daRigenerare.length) return { mazzo, modificato };
+
+  // Crea un clone nascosto di card-container fuori schermo
+  const originale = document.getElementById('card-container');
+  const clone = originale.cloneNode(true);
+  clone.id = 'card-container-offscreen';
+  clone.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:360px;pointer-events:none;visibility:hidden;';
+  document.body.appendChild(clone);
+
+  // Carica lo stesso sfondo del card-bg originale nel clone
+  const bgSrc = document.getElementById('card-bg').src;
+  clone.querySelector('#card-bg').id  = 'card-bg-offscreen';
+  clone.querySelector('#card-bg-offscreen').src = bgSrc;
+  const innerClone = clone.querySelector('#card-body-inner');
+  innerClone.id = 'card-body-inner-offscreen';
+  const bodyClone  = clone.querySelector('#card-body');
+
+  try {
+    for (let i = 0; i < mazzo.length; i++) {
+      const carta = mazzo[i];
+      if (carta.fullRes || carta.img || !carta.testo || !carta.testo.trim()) continue;
+
+      try {
+        // Scrivi testo nel clone, mai nel DOM visibile
+        innerClone.textContent = carta.testo.toUpperCase();
+        await new Promise(r => document.fonts.ready.then(r));
+
+        // autoFit sul clone
+        const maxH = bodyClone.clientHeight;
+        const maxW = bodyClone.clientWidth - 4;
+        let lo = 8, hi = 300, best = 8;
+        while (lo <= hi) {
+          const mid = Math.floor((lo + hi) / 2);
+          innerClone.style.fontSize = mid + 'px';
+          void innerClone.offsetHeight;
+          if (innerClone.scrollHeight <= maxH && innerClone.scrollWidth <= maxW + 4) { best = mid; lo = mid + 1; }
+          else { hi = mid - 1; }
+        }
+        innerClone.style.fontSize = best + 'px';
+        await new Promise(r => requestAnimationFrame(r));
+
+        const shash  = await sha256String(normalizzaTesto(carta.testo));
+        const canvas = await html2canvas(clone, {
+          scale: 3, useCORS: true, allowTaint: true,
+          backgroundColor: null, logging: false, imageTimeout: 10000
+        });
+        const dataUrl = canvas.toDataURL('image/png');
+        const rawBuf  = await (await fetch(dataUrl)).arrayBuffer();
+        const pngBuf  = injectPngTextChunk(rawBuf, 'porky_shash', shash);
+        const fullRes = 'data:image/png;base64,' + arrayBufferToBase64(pngBuf);
+
+        mazzo[i] = { ...carta, img: fullRes, shash, fullRes: true, savedAt: Date.now() };
+        modificato = true;
+
+        // Aggiorna il mazzo locale e la lista dopo ogni carta rigenerata
+        await localforage.setItem(CUSTOM_KEY, mazzo);
+        await aggiornaListaCustom();
+
+      } catch(e) {
+        console.warn('rigeneraFullRes: errore su carta', carta.testo, e);
+      }
+    }
+  } finally {
+    // Rimuovi sempre il clone, anche in caso di errore
+    document.body.removeChild(clone);
+  }
+
+  return { mazzo, modificato };
+}
+ 
+
+async function sync(silenzioso = true) {
+  if (!_currentUser) return;
+
+  if (_syncBusy) {
+    // Schedula un unico retry — se già schedulato non ne aggiunge altri
+    if (_syncScheduled === null) {
+      _syncScheduled = setTimeout(() => {
+        _syncScheduled = null;
+        sync(silenzioso);
+      }, 2000);
+    }
+    return;
+  }
+
+  // Cancella eventuale retry pendente: questa sync lo sostituisce
+  if (_syncScheduled !== null) {
+    clearTimeout(_syncScheduled);
+    _syncScheduled = null;
+  }
+
+  _syncBusy = true;
+
+  try {
+    const base = (id) => doc(db, 'users', _currentUser.uid, 'backup', id);
+    const now = Date.now();
+
+    // ── 1. Leggi locale ──
+    let locale = (await localforage.getItem(CUSTOM_KEY) || []).map(c => ({
+      ...c, savedAt: c.savedAt || now
+    }));
+
+    // ── 2. Leggi cloud selettivo ──
+    // Scarica i chunk solo se mazzo_meta.aggiornato è cambiato
+    // rispetto all'ultima lettura — evita letture inutili a ogni sync
+    let cloudCarte = [];
+    let cloudDeleted = {};
+    try {
+      const metaSnap = await getDoc(base('mazzo_meta'));
+      if (metaSnap.exists()) {
+        const meta = metaSnap.data();
+        cloudDeleted = meta.tombstones || {};
+        const cloudAggiornato = meta.aggiornato || 0;
+        const ultimaLettura   = parseInt(localStorage.getItem('porky_last_cloud_read') || '0');
+
+        if (cloudAggiornato > ultimaLettura) {
+          // Cloud più recente del nostro ultimo fetch → scarica i chunk
+          const numChunks = meta.chunks || 0;
+          if (numChunks > 0) {
+            const chunkSnaps = await Promise.all(
+              Array.from({ length: numChunks }, (_, i) => getDoc(base('mazzo_chunk_' + i)))
+            );
+            const localeShash = new Set(locale.map(c => c.shash).filter(Boolean));
+            for (const cs of chunkSnaps) {
+              if (cs.exists()) {
+                const carte = (cs.data().carte || []).map(c =>
+                  localeShash.has(c.shash) ? (({ img, ...rest }) => rest)(c) : c
+                );
+                cloudCarte.push(...carte);
+              }
+            }
+          }
+          localStorage.setItem('porky_last_cloud_read', String(cloudAggiornato));
+        } else {
+          // Nessuna modifica sul cloud dall'ultima lettura
+          // Usa locale come unica fonte per il merge
+          cloudCarte = [];
+        }
+      }
+    } catch (_) { /* offline: usa solo locale */ }
+
+    // ── 3. Merge tombstones ──
+    const localDeleted = JSON.parse(localStorage.getItem('porky_deleted') || '{}');
+    const deleted = purgaTombstones({ ...cloudDeleted, ...localDeleted });
+    localStorage.setItem('porky_deleted', JSON.stringify(deleted));
+
+    // ── 4. Merge bidirezionale ──
+    const mazzoMerged = await mergeMazzi({ locale, cloud: cloudCarte, deleted });
+
+    // ── 5. Rigenera full-res silente ──
+    const { mazzo: mazzoFinale, modificato } = await rigeneraFullResSilente(mazzoMerged);
+    if (modificato) localStorage.setItem('porky_last_cloud_read', String(now));
+
+    // ── 6. Salva locale ──
+    await localforage.setItem(CUSTOM_KEY, mazzoFinale);
+    await aggiornaListaCustom();
+
+    // ── 7. Indice cloud per evitare ricompressioni inutili ──
+    const cloudIndex = new Map(cloudCarte.map(c => [c.shash, c.savedAt || 0]));
+
+    // ── 8. Comprimi in batch da 5 ──
+    const BATCH = 5;
+    const carteCloud = [];
+    for (let i = 0; i < mazzoFinale.length; i += BATCH) {
+      const slice = mazzoFinale.slice(i, i + BATCH);
+      const comp = await Promise.all(slice.map(async c => {
+        const { _inModifica, fullRes, ...rest } = c;
+        const cartaPulita = JSON.parse(JSON.stringify(rest));
+        const cloudSavedAt = cloudIndex.get(c.shash);
+        if (cloudSavedAt !== undefined && cloudSavedAt === (c.savedAt || 0)) {
+          const cartaCloud = cloudCarte.find(cc => cc.shash === c.shash);
+          if (cartaCloud && cartaCloud.img) return { ...cartaPulita, img: cartaCloud.img };
+        }
+        return { ...cartaPulita, img: await comprimiImgPerCloud(c.img) };
+      }));
+      carteCloud.push(...comp);
+    }
+
+    // ── 9. Chunk dinamici basati sul peso reale ──
+    const CHUNK_LIMIT = 700 * 1024;
+    const chunks = [];
+    let chunkCorrente = [], pesoCorrente = 0;
+    for (const carta of carteCloud) {
+      const peso = (carta.img || '').length;
+      if (chunkCorrente.length > 0 && pesoCorrente + peso > CHUNK_LIMIT) {
+        chunks.push(chunkCorrente);
+        chunkCorrente = [];
+        pesoCorrente = 0;
+      }
+      chunkCorrente.push(carta);
+      pesoCorrente += peso;
+    }
+    if (chunkCorrente.length > 0) chunks.push(chunkCorrente);
+
+    // ── 10. Tombstones puliti ──
+    const shashNelMazzo = new Set(mazzoFinale.map(c => c.shash).filter(Boolean));
+    const deletedPulito = Object.fromEntries(
+      Object.entries(deleted).filter(([s]) => !shashNelMazzo.has(s))
+    );
+    localStorage.setItem('porky_deleted', JSON.stringify(deletedPulito));
+
+    // ── 11. Scrivi meta ──
+    await setDoc(base('mazzo_meta'), {
+      aggiornato: now,
+      tombstones: deletedPulito,
+      chunks: chunks.length
+    });
+
+    // Aggiorna il timestamp dell'ultima lettura cloud con quello appena scritto
+    // così questo dispositivo non riscarica i propri chunk al prossimo sync
+    localStorage.setItem('porky_last_cloud_read', String(now));
+
+    // ── 12. Scrivi chunk in parallelo ──
+    await Promise.all(chunks.map((carte, i) => setDoc(base('mazzo_chunk_' + i), { carte })));
+
+    // ── 13. Elimina chunk obsoleti ──
+    const prevChunks = parseInt(localStorage.getItem('porky_prev_chunks') || '0');
+    const chunksChanged = prevChunks !== chunks.length;
+    if (prevChunks > chunks.length) {
+      await Promise.all(
+        Array.from({ length: prevChunks - chunks.length }, (_, i) =>
+          deleteDoc(base('mazzo_chunk_' + (chunks.length + i))).catch(() => {})
+        )
+      );
+    }
+    localStorage.setItem('porky_prev_chunks', String(chunks.length));
+
+    // ── 14. Scrivi mazzo_signal per notificare altri dispositivi ──
+    // Separato da mazzo_meta → onSnapshot non triggera sync() su se stessa
+    // Scritto sempre: garantisce che l'altro dispositivo riceva la notifica
+    const maxSavedAt = mazzoFinale.reduce((m, c) => Math.max(m, c.savedAt || 0), 0);
+    const mazzoHash = mazzoFinale.length + '_' + maxSavedAt;
+    const ultimoHash = localStorage.getItem('porky_last_signal_hash') || '';
+    if (mazzoHash !== ultimoHash) {
+      await setDoc(base('mazzo_signal'), { t: now }).catch(() => {});
+      localStorage.setItem('porky_last_signal_hash', mazzoHash);
+    }
+
+  } catch (e) {
+    console.error('sync error:', e);
+  } finally {
+    _syncBusy = false;
+  }
+}
+ 
+async function aggiungiTombstone(shash) {
+  if (!shash || !shash.trim()) return;
+  const ts = Date.now();
+ 
+  const local = JSON.parse(localStorage.getItem('porky_deleted') || '{}');
+  local[shash] = ts;
+  localStorage.setItem('porky_deleted', JSON.stringify(purgaTombstones(local)));
+ 
+  if (_currentUser) {
+    try {
+      const metaRef = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo_meta');
+      const snap = await getDoc(metaRef);
+      const cloudDeleted = snap.exists() ? (snap.data().tombstones || {}) : {};
+      cloudDeleted[shash] = ts;
+      await setDoc(metaRef, { tombstones: purgaTombstones(cloudDeleted), aggiornato: ts }, { merge: true });
+    } catch (_) { }
+  }
+}
+ 
+function avviaAutoSync() {
+  fermaAutoSync();
+  if (!_currentUser) return;
+
+  // Ascolta mazzo_signal — documento separato scritto SOLO per notificare
+  // altri dispositivi, mai da sync() stessa → nessun loop
+  const signalRef = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo_signal');
+  _unsubscribe = onSnapshot(signalRef, () => sync(true));
+
+  _syncTimer = setInterval(() => {
+    if (_currentUser) sync(true);
+  }, 60000);
+}
+
+function fermaAutoSync() {
+  if (_unsubscribe) { _unsubscribe(); _unsubscribe = null; }
+  if (_syncTimer)   { clearInterval(_syncTimer); _syncTimer = null; }
+  localStorage.removeItem('porky_last_cloud_read');
+}
+
+// Avvia sync solo quando l'utente è loggato
+onAuthStateChanged(auth, async user => {
+  _currentUser = user;
+  const loginInfo = document.getElementById('login-info');
+  const btnLogin  = document.getElementById('btn-login');
+  const btnLogout = document.getElementById('btn-logout');
+  const btnCom    = document.getElementById('btn-community');
+
+  if (user) {
+    loginInfo.innerHTML = (user.photoURL ? `<img src="${user.photoURL}" alt="">` : '') +
+                          ' ' + (user.displayName || user.email);
+    btnLogin.style.display  = 'none';
+    btnLogout.style.display = 'inline-block';
+    btnCom.style.display    = 'inline-block';
+    await sync(true);
+    avviaAutoSync();
+  } else {
+    fermaAutoSync();
+    loginInfo.textContent   = 'Non connesso';
+    btnLogin.style.display  = 'inline-block';
+    btnLogout.style.display = 'none';
+    btnCom.style.display    = 'none';
+    await aggiornaListaCustom();
+  }
+});
+ 
+document.getElementById('btn-login').addEventListener('click', async () => {
+  try {
+    await signInWithPopup(auth, new GoogleAuthProvider());
+  } catch(e) {
+    if (e.code !== 'auth/popup-closed-by-user') await customAlert('Errore login:\n' + e.message);
+  }
+});
+ 
+document.getElementById('btn-logout').addEventListener('click', async () => {
+  if (!await customConfirm({ message: 'Disconnettersi da Google?', okText: 'SI', cancelText: 'NO' })) return;
+  await signOut(auth);
+});
+ 
+window.addEventListener('online', () => sync(true));
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') sync(true);
+});
+ 
+document.getElementById('btn-community').addEventListener('click', async () => {
+  document.getElementById('communityOverlay').style.display = 'flex';
+  document.getElementById('community-search').value = '';
+  await caricaCommunity();
+});
+ 
+document.getElementById('btn-chiudi-community').addEventListener('click', () => {
+  document.getElementById('communityOverlay').style.display = 'none';
+});
+ 
+async function caricaCommunity() {
+  const status = document.getElementById('community-status');
+  const grid   = document.getElementById('community-grid');
+  status.textContent = 'Caricamento...';
+  grid.innerHTML = '';
+  try {
+    const q    = query(collection(db, 'community'), orderBy('likes', 'desc'), limit(100));
+    const snap = await getDocs(q);
+    _communityCards = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    status.textContent = _communityCards.length > 0 ? '' : 'Nessuna carta ancora. Sii il primo a condividere!';
+    renderCommunity(_communityCards);
+  } catch(e) {
+    status.textContent = 'Errore caricamento: ' + e.message;
+  }
+}
+ 
+function renderCommunity(cards) {
+  const grid    = document.getElementById('community-grid');
+  grid.innerHTML = '';
+  if (!cards.length) return;
+ 
+  const sorted = [...cards].sort((a, b) => {
+    const ua = a.uid || ''; const ub = b.uid || '';
+    if (ua < ub) return -1;
+    if (ua > ub) return 1;
+    return (b.likes || 0) - (a.likes || 0);
+  });
+ 
+  const isAdmin = _currentUser && _currentUser.uid === ADMIN_UID;
+  sorted.forEach(carta => {
+    const isOwner = _currentUser && carta.uid === _currentUser.uid;
+    const wrap    = document.createElement('div');
+    wrap.className = 'community-card';
+ 
+    const img   = document.createElement('img');
+    img.src     = carta.img; img.title = carta.testo || '';
+    img.style.cursor = 'pointer';
+    img.onclick = () => apriDettaglioCarta(carta);
+ 
+    const likes = document.createElement('div');
+    likes.className = 'c-likes'; likes.id = 'likes-' + carta.id;
+    likes.textContent = '❤️ ' + (carta.likes || 0);
+ 
+    const btns      = document.createElement('div');
+    btns.className  = 'c-btns';
+ 
+    const btnImport = document.createElement('button');
+    btnImport.className = 'c-import'; btnImport.textContent = '⬇';
+    btnImport.title = 'Importa nel mazzo';
+    btnImport.onclick = () => importaDaCommunity(carta);
+ 
+    const btnLike = document.createElement('button');
+    btnLike.className = 'c-like'; btnLike.textContent = '❤';
+    btnLike.title = 'Metti like';
+    btnLike.onclick = () => likeCarta(carta.id);
+ 
+    btns.appendChild(btnImport);
+    btns.appendChild(btnLike);
+ 
+    if (isOwner || isAdmin) {
+      const btnDel = document.createElement('button');
+      btnDel.className = 'c-like'; btnDel.style.background = '#d64040';
+      btnDel.textContent = '🗑';
+      btnDel.title = isAdmin && !isOwner ? 'Elimina carta (admin)' : 'Elimina la tua carta';
+      btnDel.onclick = () => eliminaCartaCommunity(carta.id);
+      btns.appendChild(btnDel);
+    }
+ 
+    wrap.appendChild(img);
+    wrap.appendChild(likes); wrap.appendChild(btns);
+ 
+    if (isAdmin) {
+      const autore = document.createElement('div');
+      autore.style.cssText = 'font-size:8px;color:#502369;font-weight:bold;text-align:center;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px;';
+      autore.title = 'UID: ' + (carta.uid || 'n/d');
+      autore.textContent = '👤 ' + (carta.autore || 'Sconosciuto');
+      wrap.appendChild(autore);
+    }
+    grid.appendChild(wrap);
+  });
+}
+ 
+document.getElementById('community-search').addEventListener('input', () => {
+  const q = document.getElementById('community-search').value.trim().toLowerCase();
+  renderCommunity(q ? _communityCards.filter(c => (c.testo || '').toLowerCase().includes(q)) : _communityCards);
+});
+ 
+async function importaDaCommunity(carta) {
+  let mazzo = await localforage.getItem(CUSTOM_KEY) || [];
+ 
+  const cartaConShash = await garantisciShash(carta);
+  const testoNorm     = (cartaConShash.testo || '').toUpperCase().trim();
+ 
+  const duplicata = mazzo.some(c =>
+    (c.shash && cartaConShash.shash && c.shash === cartaConShash.shash) ||
+    (testoNorm && (c.testo || '').toUpperCase().trim() === testoNorm)
+  );
+  if (duplicata) { await customAlert('Questa carta è già nel tuo mazzo.'); return; }
+ 
+  const nuovaCarta = {
+    ...cartaConShash,
+    estratta: false,
+    _inModifica: false,
+    savedAt: Date.now(),
+    fullRes: false,
+    img: null // forza rigenerazione
+  };
+  mazzo.push(nuovaCarta);
+ 
+  await localforage.setItem(CUSTOM_KEY, mazzo);
+  await aggiornaListaCustom();
+  await sync(true);
+  await customAlert('Carta importata nel mazzo!');
+}
+ 
+async function likeCarta(id) {
+  if (!_currentUser) { await customAlert('Devi accedere con Google per mettere like.'); return; }
+  const carta = _communityCards.find(c => c.id === id);
+  if (carta && carta.likedBy && carta.likedBy.includes(_currentUser.uid)) {
+    await customAlert('Hai già messo like a questa carta.'); return;
+  }
+  try {
+    await updateDoc(doc(db, 'community', id), {
+      likes: increment(1),
+      likedBy: arrayUnion(_currentUser.uid)
+    });
+    const el = document.getElementById('likes-' + id);
+    if (el) el.textContent = '❤️ ' + (parseInt(el.textContent.replace('❤️ ', '')) + 1);
+    if (carta) {
+      if (!carta.likedBy) carta.likedBy = [];
+      carta.likedBy.push(_currentUser.uid);
+    }
+  } catch(e) { await customAlert('Errore like:\n' + e.message); }
+}
+ 
+async function eliminaCartaCommunity(id) {
+  if (!await customConfirm({ message: 'Eliminare questa carta dalla community?', okText: 'SI', cancelText: 'NO' })) return;
+  try {
+    await deleteDoc(doc(db, 'community', id));
+    const mazzo    = await localforage.getItem(CUSTOM_KEY) || [];
+    let aggiornato = false;
+    mazzo.forEach(c => { if (c.communityId === id) { c.communityId = null; aggiornato = true; } });
+    if (aggiornato) {
+      await localforage.setItem(CUSTOM_KEY, mazzo);
+      await sync(true);
+      await aggiornaListaCustom();
+    }
+    _communityCards = _communityCards.filter(c => c.id !== id);
+    renderCommunity(_communityCards);
+  } catch(e) { await customAlert('Errore eliminazione:\n' + e.message); }
+}
+ 
+async function condividiInCommunity(carta) {
+  if (!_currentUser) { await customAlert('Devi accedere con Google per condividere.'); return; }
+  try {
+    const imgCloud = await comprimiImgPerCloud(carta.img);
+ 
+    if (carta.communityId) {
+      await updateDoc(doc(db, 'community', carta.communityId), {
+        testo: carta.testo || '', img: imgCloud,
+        nome: carta.nome || '', updatedAt: new Date().toISOString()
+      });
+      const idx = _communityCards.findIndex(c => c.id === carta.communityId);
+      if (idx !== -1) { _communityCards[idx].testo = carta.testo; _communityCards[idx].img = imgCloud; }
+      await customAlert('Carta aggiornata nella community! ✏️');
+      return;
+    }
+ 
+    if (_communityCards.some(c => c.shash === carta.shash)) {
+      await customAlert('Questa carta è già presente nella community.'); return;
+    }
+ 
+    const ref = await addDoc(collection(db, 'community'), {
+      testo: carta.testo || '', img: imgCloud, shash: carta.shash || '',
+      nome: carta.nome || '', autore: _currentUser.displayName || _currentUser.email,
+      uid: _currentUser.uid, likes: 0, likedBy: [], data: new Date().toISOString()
+    });
+ 
+    const mazzo       = await localforage.getItem(CUSTOM_KEY) || [];
+    const cartaLocale = mazzo.find(c => c.shash === carta.shash);
+    if (cartaLocale) {
+      cartaLocale.communityId = ref.id;
+      carta.communityId       = ref.id;
+      await localforage.setItem(CUSTOM_KEY, mazzo);
+    }
+    await customAlert('Carta condivisa con la community! 🎉');
+    sync(true);
+  } catch(e) { await customAlert('Errore condivisione:\n' + e.message); }
+}
+ 
+function apriDettaglioCarta(carta) {
+  const overlay = document.getElementById('cardDetailOverlay');
+ 
+  document.getElementById('cardDetailBg').src = carta.img;
+  document.getElementById('cardDetailLikes').textContent = '❤️ ' + (carta.likes || 0);
+ 
+  document.getElementById('cardDetailImport').onclick = () => {
+    importaDaCommunity(carta);
+    overlay.style.display = 'none';
+  };
+  document.getElementById('cardDetailLike').onclick = () => likeCarta(carta.id);
+ 
+  const btnDel  = document.getElementById('cardDetailDelete');
+  const isOwner = _currentUser && carta.uid === _currentUser.uid;
+  const isAdmin = _currentUser && _currentUser.uid === ADMIN_UID;
+  btnDel.style.display = (isOwner || isAdmin) ? '' : 'none';
+  btnDel.onclick = () => {
+    eliminaCartaCommunity(carta.id);
+    overlay.style.display = 'none';
+  };
+ 
+  overlay.style.display = 'flex';
+}
+ 
+document.getElementById('cardDetailClose').addEventListener('click', () => {
+  document.getElementById('cardDetailOverlay').style.display = 'none';
+});
+document.getElementById('cardDetailOverlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('cardDetailOverlay'))
+    document.getElementById('cardDetailOverlay').style.display = 'none';
+});
+ 
+function updateCard() {
+  const raw = document.getElementById('inp-body').value;
+  document.getElementById('card-body-inner').textContent = raw.toUpperCase();
+  document.fonts.ready.then(() => autoFit());
+}
+ 
+function autoFit() {
+  const inner = document.getElementById('card-body-inner');
+  const body  = document.getElementById('card-body');
+  if (!inner.textContent.trim()) return;
+  const maxH = body.clientHeight;
+  const maxW = body.clientWidth - 4;
+  let lo = 8, hi = 300, best = 8;
+  while (lo <= hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    inner.style.fontSize = mid + 'px';
+    void inner.offsetHeight;
+    if (inner.scrollHeight <= maxH && inner.scrollWidth <= maxW + 1) { // tolleranza -4px su scrollWidth
+      best = mid; lo = mid + 1; }
+    else { hi = mid - 1; }
+  }
+  inner.style.fontSize = best + 'px';
+}
+ 
+function resetAll() {
+  document.getElementById('inp-body').value = '';
+  document.getElementById('card-body-inner').textContent = '';
+  document.getElementById('inp-body').focus();
+  const btnElimina = document.getElementById('btn-elimina-modifica');
+  btnElimina.style.display = 'none';
+  btnElimina.onclick = null;
+}
+ 
+document.getElementById('inp-body').addEventListener('input', updateCard);
+document.getElementById('btn-reset-testo').addEventListener('click', resetAll);
+window.addEventListener('resize', () => document.fonts.ready.then(() => autoFit()));
+ 
+document.getElementById('btn-carica-sfondo').addEventListener('click', () => {
+  document.getElementById('inp-carta').click();
+});
+document.getElementById('inp-carta').addEventListener('change', event => {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    document.getElementById('card-bg').src = e.target.result;
+    const st = document.getElementById('status-carta');
+    st.textContent = '✔ ' + file.name; st.classList.add('ok');
+  };
+  reader.readAsDataURL(file);
+});
+ 
+function injectPngTextChunk(arrayBuffer, keyword, text) {
+  const encoder  = new TextEncoder();
+  const keyBytes = encoder.encode(keyword);
+  const textBytes = encoder.encode(text);
+  const chunkData = new Uint8Array(keyBytes.length + 1 + textBytes.length);
+  chunkData.set(keyBytes, 0); chunkData[keyBytes.length] = 0;
+  chunkData.set(textBytes, keyBytes.length + 1);
+  function crc32(buf) {
+    let crc = 0xFFFFFFFF;
+    const table = new Uint32Array(256);
+    for (let i = 0; i < 256; i++) {
+      let c = i;
+      for (let j = 0; j < 8; j++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      table[i] = c;
+    }
+    for (let i = 0; i < buf.length; i++) crc = table[(crc ^ buf[i]) & 0xFF] ^ (crc >>> 8);
+    return (crc ^ 0xFFFFFFFF) >>> 0;
+  }
+  const type      = encoder.encode('tEXt');
+  const fullChunk = new Uint8Array(type.length + chunkData.length);
+  fullChunk.set(type); fullChunk.set(chunkData, type.length);
+  const crc   = crc32(fullChunk);
+  const chunk = new Uint8Array(12 + chunkData.length);
+  const dv    = new DataView(chunk.buffer);
+  dv.setUint32(0, chunkData.length); chunk.set(type, 4); chunk.set(chunkData, 8);
+  dv.setUint32(8 + chunkData.length, crc);
+  const src    = new Uint8Array(arrayBuffer);
+  const result = new Uint8Array(src.length + chunk.length);
+  result.set(src.slice(0, 33)); result.set(chunk, 33); result.set(src.slice(33), 33 + chunk.length);
+  return result.buffer;
+}
+ 
+function arrayBufferToBase64(buffer) {
+  const bytes  = new Uint8Array(buffer);
+  let binary   = '';
+  const chunk  = 8192;
+  for (let i = 0; i < bytes.length; i += chunk)
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  return btoa(binary);
+}
+ 
+async function generaCanvas() {
+  return await html2canvas(document.getElementById('card-container'), {
+    scale: 3, useCORS: true, allowTaint: true,
+    backgroundColor: null, logging: false, imageTimeout: 10000
+  });
+}
+ 
+async function salvaFile(dataUrl, filename) {
+  const res  = await fetch(dataUrl);
+  const blob = await res.blob();
+  if (window.showDirectoryPicker) {
+    try {
+      if (!_cartellaHandle) _cartellaHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+      const perm = await _cartellaHandle.requestPermission({ mode: 'readwrite' });
+      if (perm !== 'granted') _cartellaHandle = null;
+    } catch { _cartellaHandle = null; }
+    if (_cartellaHandle) {
+      try {
+        const fh = await _cartellaHandle.getFileHandle(filename, { create: true });
+        const wr = await fh.createWritable();
+        await wr.write(blob); await wr.close();
+        await customAlert('Carta salvata in:\n' + _cartellaHandle.name + '/' + filename);
+        return filename;
+      } catch { _cartellaHandle = null; }
+    }
+  }
+  const url  = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.download = filename; link.href = url; link.click();
+  URL.revokeObjectURL(url);
+  await customAlert('Carta scaricata: ' + filename);
+  return filename;
+}
+ 
+document.getElementById('btn-dl').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-dl');
+  btn.classList.add('loading'); btn.disabled = true;
+  try {
+    const testo = document.getElementById('inp-body').value.trim();
+    if (!testo) { await customAlert('Scrivi prima il testo della carta.'); return; }
+    const shash    = await sha256String(normalizzaTesto(testo));
+    const canvas   = await generaCanvas();
+    const filename = 'carta_custom_' + shash.slice(0, 8) + '.png';
+    const dataUrl  = canvas.toDataURL('image/png');
+    const rawBuf   = await (await fetch(dataUrl)).arrayBuffer();
+    const pngBuf   = injectPngTextChunk(rawBuf, 'porky_shash', shash);
+    await salvaFile('data:image/png;base64,' + arrayBufferToBase64(pngBuf), filename);
+  } catch(e) {
+    await customAlert('Errore esportazione.\n' + e.message);
+  } finally {
+    btn.classList.remove('loading'); btn.disabled = false;
+  }
+});
+ 
+document.getElementById('btn-salva').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-salva');
+  btn.disabled = true; btn.classList.add('loading');
+  try {
+    const testo = document.getElementById('inp-body').value.trim();
+    if (!testo) { await customAlert('Scrivi prima il testo della carta.'); return; }
+    const shash   = await sha256String(normalizzaTesto(testo));
+    const canvas  = await generaCanvas();
+    const dataUrl = canvas.toDataURL('image/png');
+    const rawBuf  = await (await fetch(dataUrl)).arrayBuffer();
+    const pngBuf  = injectPngTextChunk(rawBuf, 'porky_shash', shash);
+    const injectedDataUrl = 'data:image/png;base64,' + arrayBufferToBase64(pngBuf);
+ 
+    const esistente = await localforage.getItem(CUSTOM_KEY) || [];
+    if (esistente.some(c => c.shash === shash && !c._inModifica)) {
+      await customAlert('Questa carta è già nel mazzo personalizzato.'); return;
+    }
+ 
+    const cartaInModifica = esistente.find(c => c._inModifica);
+    const nome            = cartaInModifica ? cartaInModifica.nome : 'carta_custom_' + shash.slice(0, 8) + '.png';
+    const communityId     = cartaInModifica ? (cartaInModifica.communityId || null) : null;
+    const vecchioShash    = (cartaInModifica && cartaInModifica.shash !== shash)
+      ? cartaInModifica.shash : null;
+ 
+    const carta = {
+      hash: null, phash: null, shash, lphash256: null,
+      img: injectedDataUrl, nome, originale: nome,
+      estratta: false, testo, communityId, savedAt: Date.now(),
+      fullRes: true  // creata localmente: è già full-res
+    };
+ 
+    const mazzoFinale = esistente.filter(c => !c._inModifica);
+    mazzoFinale.push(carta);
+ 
+    await localforage.setItem(CUSTOM_KEY, mazzoFinale);
+    await aggiornaListaCustom();
+ 
+    if (vecchioShash) await aggiungiTombstone(vecchioShash);
+ 
+    if (communityId) {
+      await condividiInCommunity(carta);
+      sync(true);
+    } else {
+      sync(true);
+    }
+ 
+    document.getElementById('preview-share-wrap').style.display = 'none';
+    resetAll();
+  } catch(e) {
+    await customAlert('Errore salvataggio.\n' + e.message);
+  } finally {
+    btn.disabled = false; btn.classList.remove('loading');
+  }
+});
+ 
+document.getElementById('btn-condividi-preview').addEventListener('click', async () => {
+  const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
+  const carta = mazzo.find(c => c._inModifica);
+  if (!carta) { await customAlert('Seleziona prima una carta dal mazzo (click su ✏️).'); return; }
+  await condividiInCommunity(carta);
+});
+ 
+async function aggiornaListaCustom() {
+  const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
+  document.getElementById('contatore-custom').textContent = mazzo.length;
+  const lista = document.getElementById('lista-custom');
+  lista.innerHTML = '';
+  mazzo.forEach((carta, idx) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'card-item';
+ 
+    const img   = document.createElement('img');
+    img.src     = carta.img;
+    img.title   = carta.testo || carta.nome;
+    img.style.cursor = 'pointer';
+    img.onclick = () => modificaCarta(idx);
+ 
+    if (carta._inModifica) {
+      wrap.style.opacity = '0.6';
+      img.style.border   = '2px solid #f0c040';
+      img.title          = '(in modifica) ' + (carta.testo || carta.nome);
+    }
+ 
+    const btns   = document.createElement('div');
+    btns.className = 'card-item-btns';
+ 
+    const btnMod = document.createElement('button');
+    btnMod.textContent = '✏️'; btnMod.className = 'btn-mod';
+    btnMod.title = 'Modifica carta';
+    btnMod.onclick = () => modificaCarta(idx);
+ 
+    const btnDel = document.createElement('button');
+    btnDel.textContent = '🗑'; btnDel.className = 'btn-del';
+    btnDel.title = 'Elimina carta';
+    btnDel.onclick = () => eliminaCarta(idx);
+ 
+    btns.appendChild(btnMod);
+    btns.appendChild(btnDel);
+    wrap.appendChild(img);
+    wrap.appendChild(btns);
+    lista.appendChild(wrap);
+  });
+}
+ 
+async function modificaCarta(idx) {
+  const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
+  const carta = mazzo[idx];
+  if (!carta) return;
+
+  const btnElimina = document.getElementById('btn-elimina-modifica');
+
+  if (carta._inModifica) {
+    delete carta._inModifica;
+    await localforage.setItem(CUSTOM_KEY, mazzo);
+    await aggiornaListaCustom();
+    resetAll();
+    document.getElementById('preview-share-wrap').style.display = 'none';
+    btnElimina.style.display = 'none';
+    btnElimina.onclick = null;
+    return;
+  }
+
+  const prev = mazzo.findIndex(c => c._inModifica);
+  if (prev !== -1) delete mazzo[prev]._inModifica;
+
+  carta._inModifica = true;
+  await localforage.setItem(CUSTOM_KEY, mazzo);
+  document.getElementById('inp-body').value = carta.testo || '';
+  updateCard();
+  await aggiornaListaCustom();
+  document.getElementById('preview-share-wrap').style.display = 'block';
+
+  // Mostra bottone elimina e collegalo all'indice corrente
+  btnElimina.style.display = '';
+  btnElimina.onclick = () => eliminaCarta(idx);
+}
+ 
+async function eliminaCarta(idx) {
+  const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
+  const carta = mazzo[idx];
+  if (!carta) return;
+ 
+  if (!await customConfirm({
+    message: 'Eliminare la carta "' + (carta.testo || carta.nome) + '"?',
+    okText: 'SI', cancelText: 'NO'
+  })) return;
+ 
+  mazzo.splice(idx, 1);
+  await localforage.setItem(CUSTOM_KEY, mazzo);
+  await aggiornaListaCustom();
+ 
+  if (carta.shash) await aggiungiTombstone(carta.shash);
+  await sync(true);
+}
+ 
+document.getElementById('btn-cancella-tutto').addEventListener('click', async () => {
+  if (!await customConfirm({
+    message: 'Cancellare tutto il mazzo personalizzato?',
+    okText: 'SI', cancelText: 'NO'
+  })) return;
+ 
+  const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
+  const local = JSON.parse(localStorage.getItem('porky_deleted') || '{}');
+  const now = Date.now();
+ 
+  for (const carta of mazzo) {
+    if (carta.shash) local[carta.shash] = now;
+  }
+ 
+  localStorage.setItem('porky_deleted', JSON.stringify(local));
+  await localforage.setItem(CUSTOM_KEY, []);
+  await aggiornaListaCustom();
+  await sync(true);
+});
+ 
+document.getElementById('cerca-mazzo').addEventListener('input', () => {
+  const q = document.getElementById('cerca-mazzo').value.trim().toLowerCase();
+  document.getElementById('lista-custom').querySelectorAll('.card-item').forEach(item => {
+    const t = (item.querySelector('img')?.title || '').toLowerCase().replace('(in modifica) ', '');
+    item.style.display = (!q || t.includes(q)) ? '' : 'none';
+  });
+});
+ 
+document.getElementById('btn-esporta-backup').addEventListener('click', async () => {
+  const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
+  if (!mazzo.length) { await customAlert('Il mazzo è vuoto, niente da salvare.'); return; }
+  if (window.showDirectoryPicker && !_cartellaHandle) {
+    try { _cartellaHandle = await window.showDirectoryPicker({ mode: 'readwrite' }); }
+    catch { _cartellaHandle = null; }
+  }
+  const blob     = new Blob([JSON.stringify(mazzo, null, 2)], { type: 'application/json' });
+  const filename = 'mazzo_custom_backup.json';
+  if (_cartellaHandle) {
+    try {
+      const fh = await _cartellaHandle.getFileHandle(filename, { create: true });
+      const wr = await fh.createWritable();
+      await wr.write(blob); await wr.close();
+    } catch { _cartellaHandle = null; }
+  }
+  if (!_cartellaHandle) {
+    const url  = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url; link.download = filename; link.click();
+    URL.revokeObjectURL(url);
+  }
+  for (const carta of mazzo) {
+    if (!carta.img || !carta.nome) continue;
+    try {
+      const pngBlob = await (await fetch(carta.img)).blob();
+      if (_cartellaHandle) {
+        try {
+          const fh = await _cartellaHandle.getFileHandle(carta.nome, { create: true });
+          const wr = await fh.createWritable();
+          await wr.write(pngBlob); await wr.close();
+        } catch { }
+      } else {
+        const url  = URL.createObjectURL(pngBlob);
+        const link = document.createElement('a');
+        link.href = url; link.download = carta.nome; link.click();
+        URL.revokeObjectURL(url);
+        await new Promise(r => setTimeout(r, 300));
+      }
+    } catch { }
+  }
+  await customAlert('Backup completato: ' + mazzo.length + ' carte salvate.');
+});
+ 
+document.getElementById('btn-importa-backup').addEventListener('click', () => {
+  document.getElementById('inp-backup').click();
+});
+ 
+document.getElementById('inp-backup').addEventListener('change', async event => {
+  const file = event.target.files[0];
+  event.target.value = '';
+  if (!file) return;
+  try {
+    const dati = JSON.parse(await file.text());
+    if (!Array.isArray(dati)) { await customAlert('File non valido.'); return; }
+ 
+    const now         = Date.now();
+    const datiSanati  = await Promise.all(
+      dati.map(async c => await garantisciShash({ ...c, savedAt: now }))
+    );
+ 
+    const esistente = await localforage.getItem(CUSTOM_KEY) || [];
+    if (esistente.length > 0) {
+      const scelta = await customConfirm({
+        message: 'Vuoi sostituire il mazzo attuale o unire le carte?\n(Rosso = sostituisci, Oro = unisci)',
+        okText: 'Sostituisci', cancelText: 'Unisci'
+      });
+      if (scelta) {
+        const mazzoFinale = await mergeMazzi({ locale: datiSanati, cloud: [], deleted: {} });
+        await localforage.setItem(CUSTOM_KEY, mazzoFinale);
+        await aggiornaListaCustom();
+        await sync(true);
+        await customAlert('Mazzo sostituito: ' + mazzoFinale.length + ' carte importate.');
+      } else {
+        const mazzoFinale = await mergeMazzi({ locale: [...esistente, ...datiSanati], cloud: [], deleted: {} });
+        const nuove       = mazzoFinale.length - esistente.length;
+        await localforage.setItem(CUSTOM_KEY, mazzoFinale);
+        await aggiornaListaCustom();
+        await sync(true);
+        await customAlert('Importate ' + nuove + ' carte nuove, ' + (datiSanati.length - nuove) + ' duplicate ignorate.');
+      }
+    } else {
+      const mazzoFinale = await mergeMazzi({ locale: datiSanati, cloud: [], deleted: {} });
+      await localforage.setItem(CUSTOM_KEY, mazzoFinale);
+      await aggiornaListaCustom();
+      await sync(true);
+      await customAlert('Backup importato: ' + mazzoFinale.length + ' carte.');
+    }
+  } catch(e) { await customAlert('Errore importazione:\n' + e.message); }
+});
+ 
+(function() {
+  const privacyOverlay    = document.getElementById('privacyOverlay');
+  const istruzioniOverlay = document.getElementById('istruzioniOverlay');
+  const disclaimerOverlay = document.getElementById('disclaimerOverlay');
+ 
+  const DISCLAIMER_KEY = 'porky_age_ok';
+ 
+  function mostraDisclaimer() {
+    disclaimerOverlay.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+  }
+  function accettaDisclaimer() {
+    sessionStorage.setItem(DISCLAIMER_KEY, '1');
+    disclaimerOverlay.style.display = 'none';
+    document.body.style.overflow = '';
+    const ora          = Date.now();
+    const ultimaVisita = parseInt(localStorage.getItem('porky_last_visit') || '0');
+    if (!ultimaVisita || (ora - ultimaVisita) > 24 * 60 * 60 * 1000) {
+      setTimeout(() => { istruzioniOverlay.style.display = 'flex'; }, 300);
+    }
+    localStorage.setItem('porky_last_visit', ora);
+  }
+  function rifiutaDisclaimer() {
+    disclaimerOverlay.innerHTML =
+      '<div style="color:#fff;text-align:center;font-size:18px;font-weight:bold;padding:40px;">' +
+      '🔞 Accesso negato.<br><br>Questa pagina non è accessibile.</div>';
+    disclaimerOverlay.style.background = 'rgba(0,0,0,0.97)';
+    document.body.style.overflow = 'hidden';
+  }
+ 
+  document.getElementById('disclaimerSi').addEventListener('click', accettaDisclaimer);
+  document.getElementById('disclaimerNo').addEventListener('click', rifiutaDisclaimer);
+ 
+  if (sessionStorage.getItem(DISCLAIMER_KEY) === '1') {
+    disclaimerOverlay.style.display = 'none';
+    const ora          = Date.now();
+    const ultimaVisita = parseInt(localStorage.getItem('porky_last_visit') || '0');
+    if (!ultimaVisita || (ora - ultimaVisita) > 24 * 60 * 60 * 1000) {
+      setTimeout(() => { istruzioniOverlay.style.display = 'flex'; }, 300);
+    }
+    localStorage.setItem('porky_last_visit', ora);
+  } else {
+    mostraDisclaimer();
+  }
+ 
+  document.getElementById('infoPrivacyBtn').addEventListener('click', () => { privacyOverlay.style.display = 'flex'; });
+  document.getElementById('privacyClose').addEventListener('click',   () => { privacyOverlay.style.display = 'none'; });
+  privacyOverlay.addEventListener('click', e => { if (e.target === privacyOverlay) privacyOverlay.style.display = 'none'; });
+ 
+  document.getElementById('infoHelpBtn').addEventListener('click',     () => { istruzioniOverlay.style.display = 'flex'; });
+  document.getElementById('istruzioniClose').addEventListener('click', () => { istruzioniOverlay.style.display = 'none'; });
+  istruzioniOverlay.addEventListener('click', e => { if (e.target === istruzioniOverlay) istruzioniOverlay.style.display = 'none'; });
+ 
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      if (istruzioniOverlay.style.display === 'flex') istruzioniOverlay.style.display = 'none';
+      else if (privacyOverlay.style.display === 'flex') privacyOverlay.style.display = 'none';
+    }
+  });
+})();
+ 
+window.addEventListener('load', async () => {
+  const cardBg = document.getElementById('card-bg');
+  await new Promise(resolve => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', cardBg.src);
+    xhr.responseType = 'blob';
+    xhr.onload = () => {
+      const reader = new FileReader();
+      reader.onload = e => { cardBg.src = e.target.result; resolve(); };
+      reader.readAsDataURL(xhr.response);
+    };
+    xhr.onerror = () => resolve();
+    xhr.send();
+  });
+ 
+  if (!auth.currentUser) {
+    await aggiornaListaCustom();
+    const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
+    if (mazzo.length === 0) {
+      if (await customConfirm({ message: 'Il mazzo è vuoto.\nVuoi importare un Backup Mazzo?', okText: 'SI', cancelText: 'NO' })) {
+        document.getElementById('inp-backup').click();
+      }
+    }
+  }
+});
+</script>
+</body>
+</html>
