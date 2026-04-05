@@ -903,7 +903,7 @@ async function sync(silenzioso = true) {
         const cloudSavedAt = cloudIndex.get(c.shash);
         if (cloudSavedAt !== undefined && cloudSavedAt === (c.savedAt || 0)) {
           const cartaCloud = cloudCarte.find(cc => cc.shash === c.shash);
-          if (cartaCloud) return { ...cartaPulita, img: cartaCloud.img };
+          if (cartaCloud && cartaCloud.img) return { ...cartaPulita, img: cartaCloud.img };
         }
         return { ...cartaPulita, img: await comprimiImgPerCloud(c.img) };
       }));
