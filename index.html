@@ -979,9 +979,16 @@ async function sync(silenzioso = true) {
     localStorage.setItem('porky_last_cloud_read', String(now));
 
     // ── 12. Scrivi chunk in parallelo ──
-    for (let i = 0; i < chunks.length; i++) {
-      await setDoc(base('mazzo_chunk_' + i), { carte: chunks[i] });
-      await new Promise(r => setTimeout(r, 50));
+    const PARALLEL = 2;
+    
+    for (let i = 0; i < chunks.length; i += PARALLEL) {
+      const slice = chunks.slice(i, i + PARALLEL);
+    
+      await Promise.all(
+        slice.map((c, j) =>
+          setDoc(base('mazzo_chunk_' + (i + j)), { carte: c })
+        )
+      );
     }
 
     // ── 13. Elimina chunk obsoleti ──
