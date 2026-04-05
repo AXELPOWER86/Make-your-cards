@@ -851,19 +851,20 @@ async function sync(silenzioso = true) {
     await aggiornaListaCustom();
 
     // Scrivi cloud carta per carta (evita oversize)
-    for (const c of mazzoFinale) {
-      const { _inModifica, ...rest } = c;
-      const cartaCloud = { ...rest, img: await comprimiImgPerCloud(c.img) };
-      await setDoc(doc(db, 'users', _currentUser.uid, 'backup', 'mazzo', c.shash), cartaCloud, { merge: true });
-    }
-    
-    // Aggiorna solo tombstones in un documento separato
-    const shashNelMazzo = new Set(mazzoFinale.map(c => c.shash).filter(Boolean));
-    const deletedPulito = Object.fromEntries(
-      Object.entries(deleted).filter(([shash]) => !shashNelMazzo.has(shash))
-    );
-    localStorage.setItem('porky_deleted', JSON.stringify(deletedPulito));
-    await setDoc(doc(db, 'users', _currentUser.uid, 'backup', 'mazzo_tombstones'), { tombstones: deletedPulito, aggiornato: now }, { merge: true });
+for (const c of mazzoFinale) {
+  const { _inModifica, ...rest } = c;
+  const cartaCloud = { ...rest, img: await comprimiImgPerCloud(c.img) };
+  const cartaId = c.shash || c.id || crypto.randomUUID(); // fallback sicuro
+  await setDoc(doc(db, 'users', _currentUser.uid, 'backup', 'mazzo', cartaId), cartaCloud, { merge: true });
+}
+
+// Aggiorna solo tombstones in un documento separato
+const shashNelMazzo = new Set(mazzoFinale.map(c => c.shash).filter(Boolean));
+const deletedPulito = Object.fromEntries(
+  Object.entries(deleted).filter(([shash]) => !shashNelMazzo.has(shash))
+);
+localStorage.setItem('porky_deleted', JSON.stringify(deletedPulito));
+await setDoc(doc(db, 'users', _currentUser.uid, 'backup', 'mazzo_tombstones'), { tombstones: deletedPulito, aggiornato: now }, { merge: true });
 
   } catch(e) {
     console.error('sync error:', e);
