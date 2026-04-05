@@ -824,7 +824,7 @@ async function sync(silenzioso = true) {
   _syncBusy = true;
 
   try {
-    const ref = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo');
+    const base = (id) => doc(db, 'users', _currentUser.uid, 'backup', id);
     const now = Date.now();
 
     // ── 1. Leggi locale ──
@@ -832,17 +832,38 @@ async function sync(silenzioso = true) {
       ...c, savedAt: c.savedAt || now
     }));
 
-    // ── 2. Leggi cloud ──
+    // ── 2. Leggi cloud selettivo ──
+    // Scarica i chunk solo se mazzo_meta.aggiornato è cambiato
+    // rispetto all'ultima lettura — evita letture inutili a ogni sync
     let cloudCarte = [];
     let cloudDeleted = {};
     try {
-      const snap = await getDoc(ref);
-      if (snap.exists()) {
-        const data = snap.data();
-        cloudCarte = data.carte || [];
-        cloudDeleted = data.tombstones || {};
+      const metaSnap = await getDoc(base('mazzo_meta'));
+      if (metaSnap.exists()) {
+        const meta = metaSnap.data();
+        cloudDeleted = meta.tombstones || {};
+        const cloudAggiornato = meta.aggiornato || 0;
+        const ultimaLettura   = parseInt(localStorage.getItem('porky_last_cloud_read') || '0');
+
+        if (cloudAggiornato > ultimaLettura) {
+          // Cloud più recente del nostro ultimo fetch → scarica i chunk
+          const numChunks = meta.chunks || 0;
+          if (numChunks > 0) {
+            const chunkSnaps = await Promise.all(
+              Array.from({ length: numChunks }, (_, i) => getDoc(base('mazzo_chunk_' + i)))
+            );
+            for (const cs of chunkSnaps) {
+              if (cs.exists()) cloudCarte.push(...(cs.data().carte || []));
+            }
+          }
+          localStorage.setItem('porky_last_cloud_read', String(cloudAggiornato));
+        } else {
+          // Nessuna modifica sul cloud dall'ultima lettura
+          // Usa locale come unica fonte per il merge
+          cloudCarte = [];
+        }
       }
-    } catch (_) { /* offline */ }
+    } catch (_) { /* offline: usa solo locale */ }
 
     // ── 3. Merge tombstones ──
     const localDeleted = JSON.parse(localStorage.getItem('porky_deleted') || '{}');
@@ -903,18 +924,22 @@ async function sync(silenzioso = true) {
     localStorage.setItem('porky_deleted', JSON.stringify(deletedPulito));
 
     // ── 11. Scrivi meta ──
-    const base = (id) => doc(db, 'users', _currentUser.uid, 'backup', id);
     await setDoc(base('mazzo_meta'), {
       aggiornato: now,
       tombstones: deletedPulito,
       chunks: chunks.length
     });
 
+    // Aggiorna il timestamp dell'ultima lettura cloud con quello appena scritto
+    // così questo dispositivo non riscarica i propri chunk al prossimo sync
+    localStorage.setItem('porky_last_cloud_read', String(now));
+
     // ── 12. Scrivi chunk in parallelo ──
     await Promise.all(chunks.map((carte, i) => setDoc(base('mazzo_chunk_' + i), { carte })));
 
     // ── 13. Elimina chunk obsoleti ──
     const prevChunks = parseInt(localStorage.getItem('porky_prev_chunks') || '0');
+    const chunksChanged = prevChunks !== chunks.length;
     if (prevChunks > chunks.length) {
       await Promise.all(
         Array.from({ length: prevChunks - chunks.length }, (_, i) =>
@@ -925,11 +950,9 @@ async function sync(silenzioso = true) {
     localStorage.setItem('porky_prev_chunks', String(chunks.length));
 
     // ── 14. Scrivi mazzo_signal per notificare altri dispositivi ──
-    // È il documento che onSnapshot ascolta — separato da mazzo_meta
-    // così sync() non triggera se stessa
-    if (modificato || chunks.length !== prevChunks) {
-      await setDoc(base('mazzo_signal'), { t: now }).catch(() => {});
-    }
+    // Separato da mazzo_meta → onSnapshot non triggera sync() su se stessa
+    // Scritto sempre: garantisce che l'altro dispositivo riceva la notifica
+    await setDoc(base('mazzo_signal'), { t: now }).catch(() => {});
 
   } catch (e) {
     console.error('sync error:', e);
@@ -973,7 +996,8 @@ function avviaAutoSync() {
 
 function fermaAutoSync() {
   if (_unsubscribe) { _unsubscribe(); _unsubscribe = null; }
-  if (_syncTimer) { clearInterval(_syncTimer); _syncTimer = null; }
+  if (_syncTimer)   { clearInterval(_syncTimer); _syncTimer = null; }
+  localStorage.removeItem('porky_last_cloud_read');
 }
 
 // Avvia sync solo quando l'utente è loggato
