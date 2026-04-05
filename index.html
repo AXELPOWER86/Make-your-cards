@@ -771,7 +771,7 @@ async function rigeneraFullResSilente(mazzo) {
   let modificato = false;
   for (let i = 0; i < mazzo.length; i++) {
     const carta = mazzo[i];
-    if (carta.fullRes || !carta.testo || !carta.testo.trim()) continue;
+    if (carta.fullRes || carta.img || !carta.testo || !carta.testo.trim()) continue;
     try {
       document.getElementById('inp-body').value = carta.testo;
       document.getElementById('card-body-inner').textContent = carta.testo.toUpperCase();
