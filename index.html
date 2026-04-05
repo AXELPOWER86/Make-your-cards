@@ -140,7 +140,7 @@ button {
   font-weight: 900; color: #f5e6c8; text-align: center;
   line-height: 1.15; word-break: normal; overflow-wrap: normal;
   white-space: pre-wrap; text-shadow: 0 1px 4px rgba(0,0,0,0.5);
-  display: block; width: 100%;
+  display: block; width: 100%; padding: 0 6px;
 }
 
 .mazzo-section {
@@ -414,6 +414,7 @@ input[type="file"] { display: none; }
       <div class="spinner"></div>
     </button>
     <button class="btn-reset" id="btn-reset-testo">🗑 Cancella testo</button>
+    <button class="btn-reset" id="btn-elimina-modifica" style="display:none;background:linear-gradient(145deg,#d64040,#8f1212);">🗑 Elimina carta</button>
     <div style="border-top:2px solid #502369;padding-top:12px;">
       <label>🃏 Sfondo carta:</label>
       <button class="btn-dl" id="btn-carica-sfondo"
@@ -769,34 +770,74 @@ async function mergeMazzi({ locale, cloud, deleted }) {
  
 async function rigeneraFullResSilente(mazzo) {
   let modificato = false;
-  for (let i = 0; i < mazzo.length; i++) {
-    const carta = mazzo[i];
-    if (carta.fullRes || carta.img || !carta.testo || !carta.testo.trim()) continue;
-    try {
-      document.getElementById('inp-body').value = carta.testo;
-      document.getElementById('card-body-inner').textContent = carta.testo.toUpperCase();
-      await new Promise(r => document.fonts.ready.then(r));
-      autoFit();
-      await new Promise(r => requestAnimationFrame(r));
 
-      const shash   = await sha256String(normalizzaTesto(carta.testo));
-      const canvas  = await generaCanvas();
-      const dataUrl = canvas.toDataURL('image/png');
-      const rawBuf  = await (await fetch(dataUrl)).arrayBuffer();
-      const pngBuf  = injectPngTextChunk(rawBuf, 'porky_shash', shash);
-      const fullRes = 'data:image/png;base64,' + arrayBufferToBase64(pngBuf);
+  // Carte da rigenerare: solo quelle senza img e senza fullRes
+  const daRigenerare = mazzo.filter(c => !c.fullRes && !c.img && c.testo && c.testo.trim());
+  if (!daRigenerare.length) return { mazzo, modificato };
 
-      mazzo[i] = { ...carta, img: fullRes, shash, fullRes: true, savedAt: Date.now() };
-      modificato = true;
-    } catch(e) {
-      console.warn('rigeneraFullRes: errore su carta', carta.testo, e);
+  // Crea un clone nascosto di card-container fuori schermo
+  const originale = document.getElementById('card-container');
+  const clone = originale.cloneNode(true);
+  clone.id = 'card-container-offscreen';
+  clone.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:360px;pointer-events:none;visibility:hidden;';
+  document.body.appendChild(clone);
+
+  // Carica lo stesso sfondo del card-bg originale nel clone
+  const bgSrc = document.getElementById('card-bg').src;
+  clone.querySelector('#card-bg').id  = 'card-bg-offscreen';
+  clone.querySelector('#card-bg-offscreen').src = bgSrc;
+  const innerClone = clone.querySelector('#card-body-inner');
+  innerClone.id = 'card-body-inner-offscreen';
+  const bodyClone  = clone.querySelector('#card-body');
+
+  try {
+    for (let i = 0; i < mazzo.length; i++) {
+      const carta = mazzo[i];
+      if (carta.fullRes || carta.img || !carta.testo || !carta.testo.trim()) continue;
+
+      try {
+        // Scrivi testo nel clone, mai nel DOM visibile
+        innerClone.textContent = carta.testo.toUpperCase();
+        await new Promise(r => document.fonts.ready.then(r));
+
+        // autoFit sul clone
+        const maxH = bodyClone.clientHeight;
+        const maxW = bodyClone.clientWidth - 4;
+        let lo = 8, hi = 300, best = 8;
+        while (lo <= hi) {
+          const mid = Math.floor((lo + hi) / 2);
+          innerClone.style.fontSize = mid + 'px';
+          void innerClone.offsetHeight;
+          if (innerClone.scrollHeight <= maxH && innerClone.scrollWidth <= maxW + 4) { best = mid; lo = mid + 1; }
+          else { hi = mid - 1; }
+        }
+        innerClone.style.fontSize = best + 'px';
+        await new Promise(r => requestAnimationFrame(r));
+
+        const shash  = await sha256String(normalizzaTesto(carta.testo));
+        const canvas = await html2canvas(clone, {
+          scale: 3, useCORS: true, allowTaint: true,
+          backgroundColor: null, logging: false, imageTimeout: 10000
+        });
+        const dataUrl = canvas.toDataURL('image/png');
+        const rawBuf  = await (await fetch(dataUrl)).arrayBuffer();
+        const pngBuf  = injectPngTextChunk(rawBuf, 'porky_shash', shash);
+        const fullRes = 'data:image/png;base64,' + arrayBufferToBase64(pngBuf);
+
+        mazzo[i] = { ...carta, img: fullRes, shash, fullRes: true, savedAt: Date.now() };
+        modificato = true;
+
+        // Aggiorna il mazzo locale e la lista dopo ogni carta rigenerata
+        await localforage.setItem(CUSTOM_KEY, mazzo);
+        await aggiornaListaCustom();
+
+      } catch(e) {
+        console.warn('rigeneraFullRes: errore su carta', carta.testo, e);
+      }
     }
-  }
-
-  if (modificato) {
-    document.getElementById('inp-body').value = '';
-    document.getElementById('card-body-inner').textContent = '';
-    autoFit();
+  } finally {
+    // Rimuovi sempre il clone, anche in caso di errore
+    document.body.removeChild(clone);
   }
 
   return { mazzo, modificato };
@@ -1307,7 +1348,7 @@ function autoFit() {
     const mid = Math.floor((lo + hi) / 2);
     inner.style.fontSize = mid + 'px';
     void inner.offsetHeight;
-    if (inner.scrollHeight <= maxH && inner.scrollWidth <= maxW + 4) { best = mid; lo = mid + 1; }
+    if (inner.scrollHeight <= maxH && inner.scrollWidth <= maxW - 4) { best = mid; lo = mid + 1; }
     else { hi = mid - 1; }
   }
   inner.style.fontSize = best + 'px';
@@ -1317,6 +1358,9 @@ function resetAll() {
   document.getElementById('inp-body').value = '';
   document.getElementById('card-body-inner').textContent = '';
   document.getElementById('inp-body').focus();
+  const btnElimina = document.getElementById('btn-elimina-modifica');
+  btnElimina.style.display = 'none';
+  btnElimina.onclick = null;
 }
  
 document.getElementById('inp-body').addEventListener('input', updateCard);
@@ -1541,25 +1585,33 @@ async function modificaCarta(idx) {
   const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
   const carta = mazzo[idx];
   if (!carta) return;
- 
+
+  const btnElimina = document.getElementById('btn-elimina-modifica');
+
   if (carta._inModifica) {
     delete carta._inModifica;
     await localforage.setItem(CUSTOM_KEY, mazzo);
     await aggiornaListaCustom();
     resetAll();
     document.getElementById('preview-share-wrap').style.display = 'none';
+    btnElimina.style.display = 'none';
+    btnElimina.onclick = null;
     return;
   }
- 
+
   const prev = mazzo.findIndex(c => c._inModifica);
   if (prev !== -1) delete mazzo[prev]._inModifica;
- 
+
   carta._inModifica = true;
   await localforage.setItem(CUSTOM_KEY, mazzo);
   document.getElementById('inp-body').value = carta.testo || '';
   updateCard();
   await aggiornaListaCustom();
   document.getElementById('preview-share-wrap').style.display = 'block';
+
+  // Mostra bottone elimina e collegalo all'indice corrente
+  btnElimina.style.display = '';
+  btnElimina.onclick = () => eliminaCarta(idx);
 }
  
 async function eliminaCarta(idx) {
