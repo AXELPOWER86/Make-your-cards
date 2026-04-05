@@ -804,9 +804,6 @@ async function rigeneraFullResSilente(mazzo) {
   return { mazzo, modificato };
 }
  
-let _syncBusy = false;
-let _syncScheduled = null;
-
 function scheduleSync() {
   if (_syncScheduled) clearTimeout(_syncScheduled);
   _syncScheduled = setTimeout(() => {
