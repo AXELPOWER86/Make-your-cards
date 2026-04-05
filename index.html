@@ -1532,16 +1532,33 @@ async function eliminaCarta(idx) {
 }
 
 document.getElementById('btn-cancella-tutto').addEventListener('click', async () => {
-  if (!await customConfirm({ message: 'Cancellare tutto il mazzo personalizzato?', okText: 'SI', cancelText: 'NO' })) return;
+  if (!await customConfirm({
+    message: 'Cancellare tutto il mazzo personalizzato?',
+    okText: 'SI',
+    cancelText: 'NO'
+  })) return;
+
   const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
 
-  // Tombstone per ogni carta
+  // 🔴 1. salva tutti i tombstone in un colpo solo (NO await dentro loop)
+  const local = JSON.parse(localStorage.getItem('porky_deleted') || '{}');
+  const now = Date.now();
+
   for (const carta of mazzo) {
-    if (carta.shash) await aggiungiTombstone(carta.shash);
+    if (carta.shash) {
+      local[carta.shash] = now;
+    }
   }
 
-  await localforage.removeItem(CUSTOM_KEY);
+  localStorage.setItem('porky_deleted', JSON.stringify(local));
+
+  // 🔴 2. svuota mazzo SENZA removeItem (evita glitch sync)
+  await localforage.setItem(CUSTOM_KEY, []);
+
+  // 🔴 3. aggiorna UI
   await aggiornaListaCustom();
+
+  // 🔴 4. UN SOLO sync finale
   await sync(true);
 });
 
