@@ -972,7 +972,6 @@ async function sync(silenzioso = true) {
       tombstones: deletedPulito,
       chunks: chunks.length
     });
-    await new Promise(r => setTimeout(r, 50));
 
     // Aggiorna il timestamp dell'ultima lettura cloud con quello appena scritto
     // così questo dispositivo non riscarica i propri chunk al prossimo sync
@@ -980,16 +979,19 @@ async function sync(silenzioso = true) {
 
     // ── 12. Scrivi chunk in parallelo ──
     const PARALLEL = 2;
-    
     for (let i = 0; i < chunks.length; i += PARALLEL) {
       const slice = chunks.slice(i, i + PARALLEL);
-    
-      await Promise.all(
-        slice.map((c, j) =>
-          setDoc(base('mazzo_chunk_' + (i + j)), { carte: c })
-        )
-      );
+      await Promise.all(slice.map((c, j) =>
+        setDoc(base('mazzo_chunk_' + (i + j)), { carte: c })
+      ));
     }
+    
+    // Piccolo delay generale
+    await new Promise(r => setTimeout(r, 50));
+    
+    // Aggiorna timestamp e ridisegna mazzo locale
+    localStorage.setItem('porky_last_cloud_read', String(now));
+    await aggiornaListaCustom();
 
     // ── 13. Elimina chunk obsoleti ──
     const prevChunks = parseInt(localStorage.getItem('porky_prev_chunks') || '0');
