@@ -1646,6 +1646,9 @@ document.getElementById('inp-backup').addEventListener('change', async event => 
         const mazzoFinale = await mergeMazzi({ locale: datiSanati, cloud: [], deleted: {} });
         await localforage.setItem(CUSTOM_KEY, mazzoFinale);
         await aggiornaListaCustom();
+        // 🔴 PRIMA salva su cloud
+        await backupCloud(mazzoFinale, []);
+        // 🔴 POI sync
         await sync(true);
         await customAlert('Mazzo sostituito: ' + mazzoFinale.length + ' carte importate.');
       } else {
@@ -1654,6 +1657,9 @@ document.getElementById('inp-backup').addEventListener('change', async event => 
         const nuove       = mazzoFinale.length - esistente.length;
         await localforage.setItem(CUSTOM_KEY, mazzoFinale);
         await aggiornaListaCustom();
+        // 🔴 PRIMA salva su cloud
+        await backupCloud(mazzoFinale, []);
+        // 🔴 POI sync
         await sync(true);
         await customAlert('Importate ' + nuove + ' carte nuove, ' + (datiSanati.length - nuove) + ' duplicate ignorate.');
       }
@@ -1661,6 +1667,9 @@ document.getElementById('inp-backup').addEventListener('change', async event => 
       const mazzoFinale = await mergeMazzi({ locale: datiSanati, cloud: [], deleted: {} });
       await localforage.setItem(CUSTOM_KEY, mazzoFinale);
       await aggiornaListaCustom();
+      // 🔴 PRIMA salva su cloud
+      await backupCloud(mazzoFinale, []);
+      // 🔴 POI sync
       await sync(true);
       await customAlert('Backup importato: ' + mazzoFinale.length + ' carte.');
     }
