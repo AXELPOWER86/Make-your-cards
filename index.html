@@ -801,76 +801,91 @@ async function rigeneraFullResSilente(mazzo) {
   const daRigenerare = mazzo.filter(c => c.testo && c.testo.trim() && !c.fullRes);
   if (!daRigenerare.length) return { mazzo, modificato };
 
-  const totale = daRigenerare.length;
-  let ridisegnate = 0;
+  const cardEl = document.getElementById('card');
+  if (!cardEl) return { mazzo, modificato };
 
-  // Mostra banner con contatore
-  mostraBannerRegen(`⏳ Ridisegno carte: 0/${totale}...`);
+  const clone = cardEl.cloneNode(true);
+  clone.id = "card-offscreen";
+  clone.style.position = "fixed";
+  clone.style.left = "-9999px";
+  clone.style.top = "0";
+  clone.style.zIndex = "-1";
+  clone.style.pointerEvents = "none";
 
-  const originale = document.getElementById('card-container');
-  const clone = originale.cloneNode(true);
-  clone.id = 'card-container-offscreen';
-  clone.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:360px;pointer-events:none;visibility:hidden;';
+  const innerClone = clone.querySelector('#card-text');
+  const bgClone = clone.querySelector('#card-bg');
+
+  if (!innerClone || !bgClone) return { mazzo, modificato };
+
+  innerClone.id = "card-text-offscreen";
+  bgClone.id = "card-bg-offscreen";
+
   document.body.appendChild(clone);
 
-  const bgSrc = document.getElementById('card-bg').src;
-  clone.querySelector('#card-bg').id  = 'card-bg-offscreen';
-  clone.querySelector('#card-bg-offscreen').src = bgSrc;
-  const innerClone = clone.querySelector('#card-body-inner');
-  innerClone.id = 'card-body-inner-offscreen';
-  const bodyClone  = clone.querySelector('#card-body');
+  for (let i = 0; i < mazzo.length; i++) {
+    const carta = mazzo[i];
 
-  try {
-    for (let i = 0; i < mazzo.length; i++) {
-      const carta = mazzo[i];
-      if (carta.fullRes || !carta.testo || !carta.testo.trim()) continue;
+    // ✅ FIX: usa il filtro corretto
+    if (!daRigenerare.includes(carta)) continue;
 
-      try {
-        innerClone.textContent = carta.testo.toUpperCase();
-        await new Promise(r => document.fonts.ready.then(r));
+    try {
+      innerClone.textContent = carta.testo.toUpperCase();
 
-        const maxH = bodyClone.clientHeight;
-        const maxW = bodyClone.clientWidth - 4;
-        let lo = 8, hi = 300, best = 8;
-        while (lo <= hi) {
-          const mid = Math.floor((lo + hi) / 2);
-          innerClone.style.fontSize = mid + 'px';
-          void innerClone.offsetHeight;
-          if (innerClone.scrollHeight <= maxH && innerClone.scrollWidth <= maxW + 4) { best = mid; lo = mid + 1; }
-          else { hi = mid - 1; }
-        }
-        innerClone.style.fontSize = best + 'px';
-        await new Promise(r => requestAnimationFrame(r));
+      // ✅ FIX: font timeout
+      await Promise.race([
+        document.fonts.ready,
+        new Promise(res => setTimeout(res, 1500))
+      ]);
 
-        const shash  = await sha256String(normalizzaTesto(carta.testo));
-        const canvas = await html2canvas(clone, {
-          scale: 3, useCORS: true, allowTaint: true,
-          backgroundColor: null, logging: false, imageTimeout: 10000
+      // background
+      const bgSrc = carta.bg || 'sfondo1.jpg';
+      const img = clone.querySelector('#card-bg-offscreen');
+      img.src = bgSrc;
+
+      // ✅ FIX: aspetta caricamento immagine
+      if (!img.complete) {
+        await new Promise(res => {
+          img.onload = img.onerror = res;
         });
-        const dataUrl = canvas.toDataURL('image/png');
-        const rawBuf  = await (await fetch(dataUrl)).arrayBuffer();
-        const pngBuf  = injectPngTextChunk(rawBuf, 'porky_shash', shash);
-        const fullRes = 'data:image/png;base64,' + arrayBufferToBase64(pngBuf);
-
-        mazzo[i] = { ...carta, img: fullRes, shash, fullRes: true, savedAt: Date.now() };
-        modificato = true;
-        ridisegnate++;
-
-        // Salva carta per carta e aggiorna la lista → l'utente vede le carte apparire una per una
-        await localforage.setItem(CUSTOM_KEY, mazzo);
-        await aggiornaListaCustom();
-
-        // Aggiorna il banner con il progresso corrente
-        mostraBannerRegen(`⏳ Ridisegno carte: ${ridisegnate}/${totale}...`);
-
-      } catch(e) {
-        console.warn('rigeneraFullRes: errore su carta', carta.testo, e);
       }
+
+      // scaling
+      const rect = innerClone.getBoundingClientRect();
+      const scale = calcolaScaleFattore(rect.height);
+      innerClone.style.transform = `scale(${scale})`;
+
+      // ✅ FIX: html2canvas protetto
+      const canvas = await Promise.race([
+        html2canvas(clone, {
+          scale: 3,
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: null,
+          logging: false,
+          imageTimeout: 10000
+        }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout canvas')), 12000))
+      ]);
+
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+
+      mazzo[i].fullRes = dataUrl;
+      modificato = true;
+
+      // opzionale: aggiorna UI ogni tot carte
+      if (i % 3 === 0) {
+        await aggiornaListaCustom();
+      }
+
+    } catch (err) {
+      console.warn("Errore rigenerazione carta:", err);
     }
-  } finally {
-    document.body.removeChild(clone);
-    nascondiBannerRegen();
   }
+
+  clone.remove();
+
+  // aggiornamento finale UI
+  await aggiornaListaCustom();
 
   return { mazzo, modificato };
 }
