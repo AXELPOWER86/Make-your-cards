@@ -588,7 +588,7 @@ let _cartellaHandle = null;
 let _syncTimer      = null;
 let _unsubscribe    = null;
 let _syncBusy       = false;
-let _syncScheduled = false;
+let _syncScheduled = null;
  
 localforage.config({ name: 'PorkysGame', storeName: 'mazzo_carte' });
  
@@ -769,63 +769,56 @@ async function rigeneraFullResSilente(mazzo) {
   let modificato = false;
   for (let i = 0; i < mazzo.length; i++) {
     const carta = mazzo[i];
-    // Salta: già full-res locale, oppure niente testo da rigenerare
     if (carta.fullRes || !carta.testo || !carta.testo.trim()) continue;
     try {
-      // Carica il testo nella card visuale (avviene in background)
       document.getElementById('inp-body').value = carta.testo;
       document.getElementById('card-body-inner').textContent = carta.testo.toUpperCase();
       await new Promise(r => document.fonts.ready.then(r));
       autoFit();
       await new Promise(r => requestAnimationFrame(r));
- 
-      const shash   = await sha256String(carta.testo.toUpperCase().trim());
+
+      const shash   = await sha256String(normalizzaTesto(carta.testo));
       const canvas  = await generaCanvas();
       const dataUrl = canvas.toDataURL('image/png');
       const rawBuf  = await (await fetch(dataUrl)).arrayBuffer();
       const pngBuf  = injectPngTextChunk(rawBuf, 'porky_shash', shash);
       const fullRes = 'data:image/png;base64,' + arrayBufferToBase64(pngBuf);
- 
-      // savedAt invariato: il sync non ricarica sul cloud questa carta
+
       mazzo[i] = { ...carta, img: fullRes, shash, fullRes: true };
       modificato = true;
     } catch(e) {
       console.warn('rigeneraFullRes: errore su carta', carta.testo, e);
     }
   }
- 
-  // Ripristina textarea vuota
+
   if (modificato) {
     document.getElementById('inp-body').value = '';
     document.getElementById('card-body-inner').textContent = '';
     autoFit();
   }
- 
+
   return { mazzo, modificato };
 }
  
-function scheduleSync() {
-  if (_syncScheduled) clearTimeout(_syncScheduled);
-  _syncScheduled = setTimeout(() => {
-    _syncScheduled = null;
-    sync(true);
-  }, 2000); // 2 secondi di debounce
-}
 
 async function sync(silenzioso = true) {
   if (!_currentUser) return;
 
-  // Blocca se c'è già una sync in corso
   if (_syncBusy) {
-    if (!_syncScheduled) {
-      _syncScheduled = true;
-      // Ritenta la sync tra 2 secondi
-      setTimeout(() => {
-        _syncScheduled = false;
+    // Schedula un unico retry — se già schedulato non ne aggiunge altri
+    if (_syncScheduled === null) {
+      _syncScheduled = setTimeout(() => {
+        _syncScheduled = null;
         sync(silenzioso);
       }, 2000);
     }
     return;
+  }
+
+  // Cancella eventuale retry pendente: questa sync lo sostituisce
+  if (_syncScheduled !== null) {
+    clearTimeout(_syncScheduled);
+    _syncScheduled = null;
   }
 
   _syncBusy = true;
@@ -931,6 +924,13 @@ async function sync(silenzioso = true) {
     }
     localStorage.setItem('porky_prev_chunks', String(chunks.length));
 
+    // ── 14. Scrivi mazzo_signal per notificare altri dispositivi ──
+    // È il documento che onSnapshot ascolta — separato da mazzo_meta
+    // così sync() non triggera se stessa
+    if (modificato || chunks.length !== prevChunks) {
+      await setDoc(base('mazzo_signal'), { t: now }).catch(() => {});
+    }
+
   } catch (e) {
     console.error('sync error:', e);
   } finally {
@@ -959,10 +959,12 @@ async function aggiungiTombstone(shash) {
  
 function avviaAutoSync() {
   fermaAutoSync();
-  if (!_currentUser) return; // niente sync se non loggato
+  if (!_currentUser) return;
 
-  const metaRef = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo_meta');
-  _unsubscribe = onSnapshot(metaRef, () => sync(true));
+  // Ascolta mazzo_signal — documento separato scritto SOLO per notificare
+  // altri dispositivi, mai da sync() stessa → nessun loop
+  const signalRef = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo_signal');
+  _unsubscribe = onSnapshot(signalRef, () => sync(true));
 
   _syncTimer = setInterval(() => {
     if (_currentUser) sync(true);
@@ -982,31 +984,6 @@ onAuthStateChanged(auth, async user => {
   const btnLogout = document.getElementById('btn-logout');
   const btnCom    = document.getElementById('btn-community');
 
-  if (user) {
-    loginInfo.innerHTML = (user.photoURL ? `<img src="${user.photoURL}" alt="">` : '') +
-                          ' ' + (user.displayName || user.email);
-    btnLogin.style.display  = 'none';
-    btnLogout.style.display = 'inline-block';
-    btnCom.style.display    = 'inline-block';
-    await sync(true);
-    avviaAutoSync();
-  } else {
-    fermaAutoSync();
-    loginInfo.textContent   = 'Non connesso';
-    btnLogin.style.display  = 'inline-block';
-    btnLogout.style.display = 'none';
-    btnCom.style.display    = 'none';
-    await aggiornaListaCustom();
-  }
-});
- 
-onAuthStateChanged(auth, async user => {
-  _currentUser = user;
-  const loginInfo = document.getElementById('login-info');
-  const btnLogin  = document.getElementById('btn-login');
-  const btnLogout = document.getElementById('btn-logout');
-  const btnCom    = document.getElementById('btn-community');
- 
   if (user) {
     loginInfo.innerHTML = (user.photoURL ? `<img src="${user.photoURL}" alt="">` : '') +
                           ' ' + (user.displayName || user.email);
