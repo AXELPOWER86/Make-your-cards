@@ -851,13 +851,13 @@ async function sync(silenzioso = true) {
     await aggiornaListaCustom();
 
     // Scrivi cloud carta per carta (evita oversize)
-    const carteCollectionRef = collection(db, 'users', _currentUser.uid, 'backup', 'mazzo_carte');
+    const mazzoDocRef = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo');
+    const carteCollectionRef = collection(mazzoDocRef, 'carte');
     
     for (const c of mazzoFinale) {
       const { _inModifica, ...rest } = c;
       const cartaCloud = { ...rest, img: await comprimiImgPerCloud(c.img) };
     
-      // Ogni carta diventa un documento nella collezione 'mazzo_carte'
       await setDoc(doc(carteCollectionRef, c.shash || crypto.randomUUID()), cartaCloud, { merge: true });
     }
     
