@@ -21,6 +21,8 @@
   -webkit-tap-highlight-color: transparent;
   box-sizing: border-box;
 }
+* { scrollbar-width: none; }
+*::-webkit-scrollbar { width: 0; height: 0; }
 ::selection { background: transparent; }
 ::-moz-selection { background: transparent; }
 textarea::selection { background: rgba(80,35,105,0.3); }
@@ -202,22 +204,14 @@ input[type="file"] { display: none; }
   box-shadow: 0 0 18px rgba(80,35,105,0.4); flex-shrink: 0;
 }
 #cardDetailBg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; display: block; }
-#cardDetailTextLayer {
-  position: absolute; top: 8%; left: 8%; right: 8%; bottom: 4%;
-  display: flex; flex-direction: column; align-items: center;
-  overflow: hidden; pointer-events: none;
+
+#cardDetailContainer {
+  width: min(300px, 78vw);
+  border-radius: 12px; overflow: hidden;
+  box-shadow: 0 0 18px rgba(80,35,105,0.4); flex-shrink: 0;
 }
-#cardDetailBody {
-  font-family: 'Carlito', Arial, sans-serif; font-weight: 900; color: #f5e6c8;
-  text-align: center; width: 100%; flex: 1; display: flex;
-  align-items: center; justify-content: center; overflow: hidden; padding: 0 4px;
-}
-#cardDetailBodyInner {
-  font-family: 'Carlito', Arial, Helvetica, sans-serif;
-  font-weight: 900; color: #f5e6c8; text-align: center;
-  line-height: 1.15; word-break: normal; overflow-wrap: normal;
-  white-space: pre-wrap; text-shadow: 0 1px 4px rgba(0,0,0,0.5);
-  display: block; width: 100%;
+#cardDetailContainer img {
+  width: 100%; display: block; border-radius: 12px;
 }
 #cardDetailBtns {
   display: flex; flex-direction: column; gap: 10px; width: 100%;
@@ -474,12 +468,7 @@ input[type="file"] { display: none; }
       <button class="detail-close" id="cardDetailClose">✕</button>
     </div>
     <div id="cardDetailContainer">
-      <img id="cardDetailBg" src="porkys_tarot_BLANK.png" alt="carta">
-      <div id="cardDetailTextLayer">
-        <div id="cardDetailBody">
-          <span id="cardDetailBodyInner"></span>
-        </div>
-      </div>
+      <img id="cardDetailBg" src="" alt="carta">
     </div>
     <div id="cardDetailBtns">
       <button class="btn-dl" id="cardDetailImport"
@@ -1171,43 +1160,25 @@ async function condividiInCommunity(carta) {
 // ═══════════════════════════════════════════════════════
 function apriDettaglioCarta(carta) {
   const overlay = document.getElementById('cardDetailOverlay');
-  
-  // Popola immagine
+
   document.getElementById('cardDetailBg').src = carta.img;
-  
-  // Popola testo con autofit
-  const inner = document.getElementById('cardDetailBodyInner');
-  inner.textContent = (carta.testo || '').toUpperCase();
-  inner.style.fontSize = '';
-  // Autofit dopo rendering
-  requestAnimationFrame(() => {
-    const body = document.getElementById('cardDetailBody');
-    const maxH = body.clientHeight;
-    const maxW = body.clientWidth - 4;
-    let lo = 8, hi = 300, best = 8;
-    while (lo <= hi) {
-      const mid = Math.floor((lo + hi) / 2);
-      inner.style.fontSize = mid + 'px';
-      void inner.offsetHeight;
-      if (inner.scrollHeight <= maxH && inner.scrollWidth <= maxW + 4) { best = mid; lo = mid + 1; }
-      else { hi = mid - 1; }
-    }
-    inner.style.fontSize = best + 'px';
-  });
-  
-  // Likes
   document.getElementById('cardDetailLikes').textContent = '❤️ ' + (carta.likes || 0);
-  
-  // Bottoni
-  document.getElementById('cardDetailImport').onclick = () => { importaDaCommunity(carta); overlay.style.display = 'none'; };
-  document.getElementById('cardDetailLike').onclick    = () => { likeCarta(carta.id); };
-  
-  const btnDel = document.getElementById('cardDetailDelete');
+
+  document.getElementById('cardDetailImport').onclick = () => {
+    importaDaCommunity(carta);
+    overlay.style.display = 'none';
+  };
+  document.getElementById('cardDetailLike').onclick = () => likeCarta(carta.id);
+
+  const btnDel  = document.getElementById('cardDetailDelete');
   const isOwner = _currentUser && carta.uid === _currentUser.uid;
   const isAdmin = _currentUser && _currentUser.uid === ADMIN_UID;
   btnDel.style.display = (isOwner || isAdmin) ? '' : 'none';
-  btnDel.onclick = () => { eliminaCartaCommunity(carta.id); overlay.style.display = 'none'; };
-  
+  btnDel.onclick = () => {
+    eliminaCartaCommunity(carta.id);
+    overlay.style.display = 'none';
+  };
+
   overlay.style.display = 'flex';
 }
 
