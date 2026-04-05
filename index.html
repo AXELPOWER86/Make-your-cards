@@ -784,7 +784,7 @@ async function rigeneraFullResSilente(mazzo) {
       const pngBuf  = injectPngTextChunk(rawBuf, 'porky_shash', shash);
       const fullRes = 'data:image/png;base64,' + arrayBufferToBase64(pngBuf);
 
-      mazzo[i] = { ...carta, img: fullRes, shash, fullRes: true };
+      mazzo[i] = { ...carta, img: fullRes, shash, fullRes: true, savedAt: Date.now() };
       modificato = true;
     } catch(e) {
       console.warn('rigeneraFullRes: errore su carta', carta.testo, e);
@@ -852,8 +852,14 @@ async function sync(silenzioso = true) {
             const chunkSnaps = await Promise.all(
               Array.from({ length: numChunks }, (_, i) => getDoc(base('mazzo_chunk_' + i)))
             );
+            const localeShash = new Set(locale.map(c => c.shash).filter(Boolean));
             for (const cs of chunkSnaps) {
-              if (cs.exists()) cloudCarte.push(...(cs.data().carte || []));
+              if (cs.exists()) {
+                const carte = (cs.data().carte || []).map(c =>
+                  localeShash.has(c.shash) ? (({ img, ...rest }) => rest)(c) : c
+                );
+                cloudCarte.push(...carte);
+              }
             }
           }
           localStorage.setItem('porky_last_cloud_read', String(cloudAggiornato));
@@ -875,6 +881,7 @@ async function sync(silenzioso = true) {
 
     // ── 5. Rigenera full-res silente ──
     const { mazzo: mazzoFinale, modificato } = await rigeneraFullResSilente(mazzoMerged);
+    if (modificato) localStorage.setItem('porky_last_cloud_read', String(now));
 
     // ── 6. Salva locale ──
     await localforage.setItem(CUSTOM_KEY, mazzoFinale);
