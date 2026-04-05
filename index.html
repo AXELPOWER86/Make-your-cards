@@ -916,7 +916,12 @@ async function sync(silenzioso = true) {
 
     // ── 5. Rigenera full-res silente ──
     const { mazzo: mazzoFinale, modificato } = await rigeneraFullResSilente(mazzoMerged);
-    if (!modificato && cloudCarte.length === 0) { return; }
+    const localeHash = JSON.stringify(locale.map(c => c.shash).sort());
+    const finaleHash = JSON.stringify(mazzoFinale.map(c => c.shash).sort());
+    
+    if (!modificato && cloudCarte.length === 0 && localeHash === finaleHash) {
+      return;
+    }
     if (modificato) localStorage.setItem('porky_last_cloud_read', String(now));
 
     // ── 6. Salva locale ──
