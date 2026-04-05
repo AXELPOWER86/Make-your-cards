@@ -850,21 +850,20 @@ async function sync(silenzioso = true) {
     await localforage.setItem(CUSTOM_KEY, mazzoFinale);
     await aggiornaListaCustom();
 
-    // Scrivi cloud (img compresse)
-    const carteCloud = await Promise.all(
-      mazzoFinale.map(async c => {
-        const { _inModifica, ...rest } = c;
-        return { ...rest, img: await comprimiImgPerCloud(c.img) };
-      })
-    );
-    // Pulizia tombstone: rimuovi dal cloud i tombstone che non servono più
-    // (quelli relativi a carte che hanno savedAt > tombstone e sono sopravvissute al merge)
+    // Scrivi cloud carta per carta (evita oversize)
+    for (const c of mazzoFinale) {
+      const { _inModifica, ...rest } = c;
+      const cartaCloud = { ...rest, img: await comprimiImgPerCloud(c.img) };
+      await setDoc(doc(db, 'users', _currentUser.uid, 'backup', 'mazzo', c.shash), cartaCloud, { merge: true });
+    }
+    
+    // Aggiorna solo tombstones in un documento separato
     const shashNelMazzo = new Set(mazzoFinale.map(c => c.shash).filter(Boolean));
     const deletedPulito = Object.fromEntries(
       Object.entries(deleted).filter(([shash]) => !shashNelMazzo.has(shash))
     );
     localStorage.setItem('porky_deleted', JSON.stringify(deletedPulito));
-    await setDoc(ref, { carte: carteCloud, tombstones: deletedPulito, aggiornato: now });
+    await setDoc(doc(db, 'users', _currentUser.uid, 'backup', 'mazzo_tombstones'), { tombstones: deletedPulito, aggiornato: now }, { merge: true });
 
   } catch(e) {
     console.error('sync error:', e);
