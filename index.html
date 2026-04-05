@@ -897,12 +897,15 @@ async function sync(silenzioso = true) {
       const slice = mazzoFinale.slice(i, i + BATCH);
       const comp = await Promise.all(slice.map(async c => {
         const { _inModifica, fullRes, ...rest } = c;
+        const cartaPulita = Object.fromEntries(
+          Object.entries(rest).filter(([_, v]) => v !== undefined)
+        );
         const cloudSavedAt = cloudIndex.get(c.shash);
         if (cloudSavedAt !== undefined && cloudSavedAt === (c.savedAt || 0)) {
           const cartaCloud = cloudCarte.find(cc => cc.shash === c.shash);
-          if (cartaCloud) return { ...rest, img: cartaCloud.img };
+          if (cartaCloud) return { ...cartaPulita, img: cartaCloud.img };
         }
-        return { ...rest, img: await comprimiImgPerCloud(c.img) };
+        return { ...cartaPulita, img: await comprimiImgPerCloud(c.img) };
       }));
       carteCloud.push(...comp);
     }
