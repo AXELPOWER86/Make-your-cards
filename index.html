@@ -1646,9 +1646,8 @@ document.getElementById('inp-backup').addEventListener('change', async event => 
         const mazzoFinale = await mergeMazzi({ locale: datiSanati, cloud: [], deleted: {} });
         await localforage.setItem(CUSTOM_KEY, mazzoFinale);
         await aggiornaListaCustom();
-
-        // 🔴 SYNC PROGRESSIVO (no limite dimensione)
-        await syncImportProgressivo(mazzoFinale);
+        // 🔴 Sync spezzata per evitare limite dimensione
+        await syncImportSpezzata();
         await customAlert('Mazzo sostituito: ' + mazzoFinale.length + ' carte importate.');
       } else {
         // Unisci: merge backup con locale esistente
@@ -1656,71 +1655,38 @@ document.getElementById('inp-backup').addEventListener('change', async event => 
         const nuove       = mazzoFinale.length - esistente.length;
         await localforage.setItem(CUSTOM_KEY, mazzoFinale);
         await aggiornaListaCustom();
-
-        // 🔴 SYNC PROGRESSIVO (no limite dimensione)
-        await syncImportProgressivo(mazzoFinale);
+        // 🔴 Sync spezzata per evitare limite dimensione
+        await syncImportSpezzata();
         await customAlert('Importate ' + nuove + ' carte nuove, ' + (datiSanati.length - nuove) + ' duplicate ignorate.');
       }
     } else {
       const mazzoFinale = await mergeMazzi({ locale: datiSanati, cloud: [], deleted: {} });
       await localforage.setItem(CUSTOM_KEY, mazzoFinale);
       await aggiornaListaCustom();
-
-      // 🔴 SYNC PROGRESSIVO (no limite dimensione)
-      await syncImportProgressivo(mazzoFinale);
+      // 🔴 Sync spezzata per evitare limite dimensione
+      await syncImportSpezzata();
       await customAlert('Backup importato: ' + mazzoFinale.length + ' carte.');
     }
   } catch(e) { await customAlert('Errore importazione:\n' + e.message); }
 });
 
-async function syncImportProgressivo(mazzo) {
-  if (!_currentUser) return;
-
-  const ref = doc(db, 'users', _currentUser.uid);
-  const now = Date.now();
-
-  // 🔴 prendi tombstones come fa sync()
-  const deleted = JSON.parse(localStorage.getItem('porky_deleted') || '{}');
-
-  // stato cloud
-  const snap = await getDoc(ref);
-  const data = snap.exists() ? snap.data() : {};
-
-  let carteCloud = data.carte || [];
-
-  const map = new Map();
-
-  // indicizza cloud
-  for (const c of carteCloud) {
-    if (c && c.shash) {
-      map.set(c.shash, c);
-    }
-  }
+async function syncImportSpezzata() {
+  const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
 
   const BATCH = 20;
 
   for (let i = 0; i < mazzo.length; i += BATCH) {
-    const chunk = mazzo.slice(i, i + BATCH);
+    const chunk = mazzo.slice(0, i + BATCH);
 
-    for (const c of chunk) {
-      if (!c.shash) continue;
+    // salva progressivamente nel localforage
+    await localforage.setItem(CUSTOM_KEY, chunk);
 
-      map.set(c.shash, {
-        ...c,
-        savedAt: now
-      });
-    }
-
-    // 🔴 SCRITTURA IDENTICA A sync()
-    await setDoc(ref, {
-      carte: Array.from(map.values()),
-      tombstones: deleted,
-      aggiornato: now
-    });
+    // 🔴 usa SOLO la tua sync (no setDoc diretto)
+    await sync(true);
   }
 
-  // sync finale
-  await sync(true);
+  // ripristina mazzo completo locale
+  await localforage.setItem(CUSTOM_KEY, mazzo);
 }
 // ═══════════════════════════════════════════════════════
 // OVERLAY ISTRUZIONI E PRIVACY
