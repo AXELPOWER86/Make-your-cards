@@ -937,11 +937,6 @@ async function sync(silenzioso = true) {
     _syncBusy = false;
   }
 }
-
-// Triggers con debounce
-_unsubscribe = onSnapshot(doc(db, 'users', _currentUser.uid, 'backup', 'mazzo_meta'), scheduleSync);
-window.addEventListener('online', scheduleSync);
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') scheduleSync(); });
  
 async function aggiungiTombstone(shash) {
   if (!shash || !shash.trim()) return;
@@ -964,16 +959,46 @@ async function aggiungiTombstone(shash) {
  
 function avviaAutoSync() {
   fermaAutoSync();
-  if (_currentUser) {
-    const metaRef = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo_meta');
-    _unsubscribe = onSnapshot(metaRef, () => sync(true));
-  }
-  _syncTimer = setInterval(() => sync(true), 60000);
+  if (!_currentUser) return; // niente sync se non loggato
+
+  const metaRef = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo_meta');
+  _unsubscribe = onSnapshot(metaRef, () => sync(true));
+
+  _syncTimer = setInterval(() => {
+    if (_currentUser) sync(true);
+  }, 60000);
 }
+
 function fermaAutoSync() {
   if (_unsubscribe) { _unsubscribe(); _unsubscribe = null; }
-  if (_syncTimer)   { clearInterval(_syncTimer); _syncTimer = null; }
+  if (_syncTimer) { clearInterval(_syncTimer); _syncTimer = null; }
 }
+
+// Avvia sync solo quando l'utente è loggato
+onAuthStateChanged(auth, async user => {
+  _currentUser = user;
+  const loginInfo = document.getElementById('login-info');
+  const btnLogin  = document.getElementById('btn-login');
+  const btnLogout = document.getElementById('btn-logout');
+  const btnCom    = document.getElementById('btn-community');
+
+  if (user) {
+    loginInfo.innerHTML = (user.photoURL ? `<img src="${user.photoURL}" alt="">` : '') +
+                          ' ' + (user.displayName || user.email);
+    btnLogin.style.display  = 'none';
+    btnLogout.style.display = 'inline-block';
+    btnCom.style.display    = 'inline-block';
+    await sync(true);
+    avviaAutoSync();
+  } else {
+    fermaAutoSync();
+    loginInfo.textContent   = 'Non connesso';
+    btnLogin.style.display  = 'inline-block';
+    btnLogout.style.display = 'none';
+    btnCom.style.display    = 'none';
+    await aggiornaListaCustom();
+  }
+});
  
 onAuthStateChanged(auth, async user => {
   _currentUser = user;
