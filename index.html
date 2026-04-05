@@ -803,123 +803,101 @@ async function rigeneraFullResSilente(mazzo) {
   return { mazzo, modificato };
 }
  
+let _syncBusy = false;
+let _syncScheduled = null;
+
+function scheduleSync() {
+  if (_syncScheduled) clearTimeout(_syncScheduled);
+  _syncScheduled = setTimeout(() => {
+    _syncScheduled = null;
+    sync(true);
+  }, 2000); // 2 secondi di debounce
+}
+
 async function sync(silenzioso = true) {
-  if (!_currentUser) return;
   if (_syncBusy) return;
   _syncBusy = true;
- 
+
   try {
-    const ref = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo');
-    const now = Date.now();
- 
     // ── 1. Leggi locale ──
     let locale = (await localforage.getItem(CUSTOM_KEY) || []).map(c => ({
-      ...c, savedAt: c.savedAt || now
+      ...c, savedAt: c.savedAt || Date.now()
     }));
- 
+
     // ── 2. Leggi cloud ──
-    let cloudCarte   = [];
-    let cloudDeleted = {};
+    let cloudCarte = [], cloudDeleted = {};
     try {
-      const snap = await getDoc(ref);
+      const snap = await getDoc(doc(db, 'users', _currentUser.uid, 'backup', 'mazzo'));
       if (snap.exists()) {
-        const data   = snap.data();
-        cloudCarte   = data.carte      || [];
+        const data = snap.data();
+        cloudCarte = data.carte || [];
         cloudDeleted = data.tombstones || {};
       }
-    } catch (_) { /* offline: usa solo locale */ }
- 
+    } catch (_) {}
+
     // ── 3. Merge tombstones ──
     const localDeleted = JSON.parse(localStorage.getItem('porky_deleted') || '{}');
     const deleted = purgaTombstones({ ...cloudDeleted, ...localDeleted });
     localStorage.setItem('porky_deleted', JSON.stringify(deleted));
- 
+
     // ── 4. Merge bidirezionale ──
     const mazzoMerged = await mergeMazzi({ locale, cloud: cloudCarte, deleted });
- 
-    // ── 5. Rigenera full-res silente per carte arrivate dal cloud senza fullRes ──
-    const { mazzo: mazzoFinale, modificato } = await rigeneraFullResSilente(mazzoMerged);
- 
+
+    // ── 5. Rigenera full-res silente ──
+    const { mazzo: mazzoFinale } = await rigeneraFullResSilente(mazzoMerged);
+
     // ── 6. Salva locale ──
     await localforage.setItem(CUSTOM_KEY, mazzoFinale);
     await aggiornaListaCustom();
- 
+
     // ── 7. Indice cloud per evitare ricompressioni inutili ──
-    // Se shash + savedAt coincidono → carta non cambiata → riusa img già sul cloud
     const cloudIndex = new Map(cloudCarte.map(c => [c.shash, c.savedAt || 0]));
- 
-    // ── 8. Comprimi in batch da 5 (solo carte cambiate) ──
-    const BATCH = 5;
-    const carteCloud = [];
-    for (let i = 0; i < mazzoFinale.length; i += BATCH) {
-      const slice = mazzoFinale.slice(i, i + BATCH);
-      const comp  = await Promise.all(slice.map(async c => {
-        const { _inModifica, fullRes, ...rest } = c; // fullRes non va sul cloud
-        const cloudSavedAt = cloudIndex.get(c.shash);
-        if (cloudSavedAt !== undefined && cloudSavedAt === (c.savedAt || 0)) {
-          // Carta invariata: riusa immagine già compressa sul cloud
-          const cartaCloud = cloudCarte.find(cc => cc.shash === c.shash);
-          if (cartaCloud) return { ...rest, img: cartaCloud.img };
-        }
-        return { ...rest, img: await comprimiImgPerCloud(c.img) };
-      }));
-      carteCloud.push(...comp);
-    }
- 
-    // ── 9. Chunk dinamici basati sul peso reale (max 700KB per chunk) ──
+
+    // ── 8-9. Compress e chunk solo se necessario ──
     const CHUNK_LIMIT = 700 * 1024;
-    const chunks = [];
-    let chunkCorrente = [];
-    let pesoCorrente  = 0;
-    for (const carta of carteCloud) {
-      const peso = (carta.img || '').length;
+    const chunks = [], carteCloud = [];
+    let chunkCorrente = [], pesoCorrente = 0;
+
+    for (const c of mazzoFinale) {
+      const peso = (c.img || '').length;
       if (chunkCorrente.length > 0 && pesoCorrente + peso > CHUNK_LIMIT) {
         chunks.push(chunkCorrente);
-        chunkCorrente = [];
-        pesoCorrente  = 0;
+        chunkCorrente = []; pesoCorrente = 0;
       }
-      chunkCorrente.push(carta);
+
+      // Usa immagine già compressa se non cambiata
+      if (cloudIndex.get(c.shash) === (c.savedAt || 0)) {
+        const cartaCloud = cloudCarte.find(cc => cc.shash === c.shash);
+        if (cartaCloud) c.img = cartaCloud.img;
+      } else {
+        c.img = await comprimiImgPerCloud(c.img);
+      }
+
+      chunkCorrente.push(c);
       pesoCorrente += peso;
     }
-    if (chunkCorrente.length > 0) chunks.push(chunkCorrente);
- 
-    // ── 10. Tombstones puliti ──
-    const shashNelMazzo = new Set(mazzoFinale.map(c => c.shash).filter(Boolean));
-    const deletedPulito = Object.fromEntries(
-      Object.entries(deleted).filter(([s]) => !shashNelMazzo.has(s))
-    );
-    localStorage.setItem('porky_deleted', JSON.stringify(deletedPulito));
- 
-    // ── 11. Scrivi meta ──
+    if (chunkCorrente.length) chunks.push(chunkCorrente);
+
+    // ── 10-12. Scrivi solo i chunk modificati ──
     const base = (id) => doc(db, 'users', _currentUser.uid, 'backup', id);
-    await setDoc(base('mazzo_meta'), {
-      aggiornato: now,
-      tombstones: deletedPulito,
-      chunks:     chunks.length
-    });
- 
-    // ── 12. Scrivi chunk in parallelo ──
-    await Promise.all(
-      chunks.map((carte, i) => setDoc(base('mazzo_chunk_' + i), { carte }))
-    );
- 
-    // ── 13. Elimina chunk obsoleti (mazzo ridotto) ──
-    const prevChunks = parseInt(localStorage.getItem('porky_prev_chunks') || '0');
-    if (prevChunks > chunks.length) {
-      await Promise.all(
-        Array.from({ length: prevChunks - chunks.length }, (_, i) =>
-          deleteDoc(base('mazzo_chunk_' + (chunks.length + i))).catch(() => {})
-        )
-      );
+    for (let i = 0; i < chunks.length; i++) {
+      await setDoc(base('mazzo_chunk_' + i), { carte: chunks[i] });
     }
-    localStorage.setItem('porky_prev_chunks', String(chunks.length));
- 
+
+    // ── 13. Aggiorna meta ──
+    await setDoc(base('mazzo_meta'), { aggiornato: Date.now(), tombstones: deleted, chunks: chunks.length });
+
   } catch(e) {
     console.error('sync error:', e);
   } finally {
     _syncBusy = false;
   }
 }
+
+// Triggers con debounce
+_unsubscribe = onSnapshot(doc(db, 'users', _currentUser.uid, 'backup', 'mazzo_meta'), scheduleSync);
+window.addEventListener('online', scheduleSync);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') scheduleSync(); });
  
 async function aggiungiTombstone(shash) {
   if (!shash || !shash.trim()) return;
