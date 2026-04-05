@@ -695,6 +695,13 @@ async function garantisciShash(carta) {
   return { ...carta, shash: await sha256String(base) };
 }
 
+function normalizzaTesto(t) {
+  return t.toUpperCase()
+          .replace(/[^\wÀÈÉÌÒÙàèéìòù\s]/g, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+}
+
 // ═══════════════════════════════════════════════════════
 // COMPRESSIONE IMMAGINI (solo per il cloud)
 // ═══════════════════════════════════════════════════════
@@ -1345,7 +1352,7 @@ document.getElementById('btn-dl').addEventListener('click', async () => {
   try {
     const testo = document.getElementById('inp-body').value.trim();
     if (!testo) { await customAlert('Scrivi prima il testo della carta.'); return; }
-    const shash    = await sha256String(testo.toUpperCase());
+    const shash    = await sha256String(normalizzaTesto(testo));
     const canvas   = await generaCanvas();
     const filename = 'carta_custom_' + shash.slice(0, 8) + '.png';
     const dataUrl  = canvas.toDataURL('image/png');
@@ -1368,7 +1375,7 @@ document.getElementById('btn-salva').addEventListener('click', async () => {
   try {
     const testo = document.getElementById('inp-body').value.trim();
     if (!testo) { await customAlert('Scrivi prima il testo della carta.'); return; }
-    const shash   = await sha256String(testo.toUpperCase());
+    const shash   = await sha256String(normalizzaTesto(testo));
     const canvas  = await generaCanvas();
     const dataUrl = canvas.toDataURL('image/png');
     const rawBuf  = await (await fetch(dataUrl)).arrayBuffer();
