@@ -1349,7 +1349,7 @@ function autoFit() {
     const mid = Math.floor((lo + hi) / 2);
     inner.style.fontSize = mid + 'px';
     void inner.offsetHeight;
-    if (inner.scrollHeight <= maxH && inner.scrollWidth <= maxW - 4) { // tolleranza -4px su scrollWidth
+    if (inner.scrollHeight <= maxH && inner.scrollWidth <= maxW + 4) { // tolleranza +4px su scrollWidth
       best = mid; lo = mid + 1; }
     else { hi = mid - 1; }
   }
