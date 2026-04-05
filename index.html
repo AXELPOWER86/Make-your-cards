@@ -274,7 +274,7 @@ input[type="file"] { display: none; }
 .sheet-body li { margin: 10px 0; text-align: left; }
 
 #infoPrivacyBtn {
-  position: fixed; right: 14px; bottom: 14px; width: 52px; height: 52px;
+  position: fixed; right: 80px; bottom: 14px; width: 52px; height: 52px;
   border-radius: 50%; background: #f9e0a7; border: 3px solid #502369;
   color: #502369; font-size: 22px; font-weight: 900;
   display: flex; align-items: center; justify-content: center;
@@ -283,7 +283,7 @@ input[type="file"] { display: none; }
 #infoPrivacyBtn:active { transform: scale(0.96); }
 
 #infoHelpBtn {
-  position: fixed; left: 14px; bottom: 14px; width: 52px; height: 52px;
+  position: fixed; left: 80px; bottom: 14px; width: 52px; height: 52px;
   border-radius: 50%; background: #f9e0a7; border: 3px solid #502369;
   color: #502369; font-size: 22px; font-weight: 900;
   display: flex; align-items: center; justify-content: center;
@@ -703,17 +703,31 @@ function comprimiImgPerCloud(dataUrl) {
     const img = new Image();
     img.onload = () => {
       const canvas = document.createElement('canvas');
-      const MAX    = 520;
-      const ratio  = Math.min(MAX / img.width, MAX / img.height, 1);
-      canvas.width  = Math.round(img.width  * ratio);
-      canvas.height = Math.round(img.height * ratio);
+      canvas.width  = img.width;
+      canvas.height = img.height;
       const ctx = canvas.getContext('2d');
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      resolve(canvas.toDataURL('image/jpeg', 0.85));
+      ctx.drawImage(img, 0, 0);
+
+      // Soglia: 700KB in base64 = ~955KB reali, sicuri sotto 1MB Firestore
+      const LIMIT = 700 * 1024;
+
+      // Prova PNG prima (lossless, qualità massima)
+      const png = canvas.toDataURL('image/png');
+      if (png.length <= LIMIT) { resolve(png); return; }
+
+      // PNG troppo grande: scendi con JPEG fino a stare sotto soglia
+      const qualita = [0.97, 0.93, 0.88, 0.82, 0.75];
+      for (const q of qualita) {
+        const jpg = canvas.toDataURL('image/jpeg', q);
+        if (jpg.length <= LIMIT) { resolve(jpg); return; }
+      }
+
+      // Fallback estremo: ultima qualità della lista
+      resolve(canvas.toDataURL('image/jpeg', 0.75));
     };
-    img.onerror = () => resolve(dataUrl); // fallback: usa originale
+    img.onerror = () => resolve(dataUrl);
     img.src = dataUrl;
   });
 }
