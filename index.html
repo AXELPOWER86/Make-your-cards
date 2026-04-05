@@ -597,6 +597,16 @@ let _syncBusy       = false;
 let _syncScheduled  = null;
  
 localforage.config({ name: 'PorkysGame', storeName: 'mazzo_carte' });
+
+// ── Banner progress rigenerazione ──
+function mostraBannerRegen(testo) {
+  const b = document.getElementById('regenBanner');
+  b.textContent = testo;
+  b.style.display = 'block';
+}
+function nascondiBannerRegen() {
+  document.getElementById('regenBanner').style.display = 'none';
+}
  
 function modalDialog(cfgOrMessage, type = 'alert') {
   const cfg = (typeof cfgOrMessage === 'string') ? { message: cfgOrMessage } : (cfgOrMessage || {});
@@ -735,15 +745,11 @@ function purgaTombstones(deleted) {
   return out;
 }
 
-// ── FIX 4: prepara carta per il cloud (rimuove campi strettamente locali) ──
 function prepareForCloud(carta) {
   const { fullRes, _inModifica, ...rest } = carta;
   return rest;
-  // fullRes NON va sul cloud: ogni dispositivo gestisce autonomamente
-  // se rigenerare o no in base al proprio stato locale
 }
 
-// ── FIX 4: mergeMazzi con fullRes come campo strettamente locale ──
 async function mergeMazzi({ locale, cloud, deleted }) {
   locale = await Promise.all(locale.map(garantisciShash));
   cloud  = await Promise.all(cloud.map(garantisciShash));
@@ -751,7 +757,6 @@ async function mergeMazzi({ locale, cloud, deleted }) {
   const deletedMap = deleted || {};
   const map = new Map();
  
-  // Passa 1: inserisci tutte le carte locali sopravvissute ai tombstone
   for (const c of locale) {
     const ts = deletedMap[c.shash];
     if (ts && (c.savedAt || 0) <= ts) continue;
@@ -763,20 +768,14 @@ async function mergeMazzi({ locale, cloud, deleted }) {
     }
   }
  
-  // Passa 2: merge con cloud
   for (const cc of cloud) {
     const ts = deletedMap[cc.shash];
     if (ts && (cc.savedAt || 0) <= ts) continue;
     if (!map.has(cc.shash)) {
-      // Carta nuova dal cloud: fullRes non esiste nel cloud → imposta false
-      // così rigeneraFullResSilente la ridisegnerà in locale
       map.set(cc.shash, { ...cc, fullRes: false });
     } else {
       const loc = map.get(cc.shash);
       if ((cc.savedAt || 0) > (loc.savedAt || 0)) {
-        // Cloud più recente:
-        // preserva img locale SOLO se locale è già fullRes E il testo non è cambiato.
-        // Se il testo è cambiato, l'img locale non è più valida → usa img cloud + rigenera.
         const testoInvariato = (cc.testo || '') === (loc.testo || '');
         const preservaImgLocale = loc.fullRes && testoInvariato;
         map.set(cc.shash, {
@@ -785,21 +784,28 @@ async function mergeMazzi({ locale, cloud, deleted }) {
           fullRes: preservaImgLocale ? true    : false
         });
       }
-      // locale più recente o pari → locale vince già (già in map, non sovrascrivere)
     }
   }
  
   return [...map.values()].map(c => JSON.parse(JSON.stringify(c)));
 }
- 
+
+// ═══════════════════════════════════════════════════════
+// FIX 1: rigeneraFullResSilente con banner progress
+// — mostra "⏳ Ridisegno X/N..." durante il loop
+// — aggiorna la UI (lista mazzo) dopo OGNI carta ridisegnata
+// ═══════════════════════════════════════════════════════
 async function rigeneraFullResSilente(mazzo) {
   let modificato = false;
 
-  // FIX 1: filtra solo su !fullRes — non importa se img è presente o no.
-  // Le carte importate da backup JSON o community arrivano con img null/compressa
-  // e fullRes:false → vanno sempre ridisegnate.
   const daRigenerare = mazzo.filter(c => c.testo && c.testo.trim() && !c.fullRes);
   if (!daRigenerare.length) return { mazzo, modificato };
+
+  const totale = daRigenerare.length;
+  let ridisegnate = 0;
+
+  // Mostra banner con contatore
+  mostraBannerRegen(`⏳ Ridisegno carte: 0/${totale}...`);
 
   const originale = document.getElementById('card-container');
   const clone = originale.cloneNode(true);
@@ -848,9 +854,14 @@ async function rigeneraFullResSilente(mazzo) {
 
         mazzo[i] = { ...carta, img: fullRes, shash, fullRes: true, savedAt: Date.now() };
         modificato = true;
+        ridisegnate++;
 
+        // Salva carta per carta e aggiorna la lista → l'utente vede le carte apparire una per una
         await localforage.setItem(CUSTOM_KEY, mazzo);
         await aggiornaListaCustom();
+
+        // Aggiorna il banner con il progresso corrente
+        mostraBannerRegen(`⏳ Ridisegno carte: ${ridisegnate}/${totale}...`);
 
       } catch(e) {
         console.warn('rigeneraFullRes: errore su carta', carta.testo, e);
@@ -858,12 +869,13 @@ async function rigeneraFullResSilente(mazzo) {
     }
   } finally {
     document.body.removeChild(clone);
+    nascondiBannerRegen();
   }
 
   return { mazzo, modificato };
 }
 
-// ── Throttled upload: scrive i chunk a ondate di UPLOAD_WAVE, pausa UPLOAD_PAUSE_MS tra ondate ──
+// ── Throttled upload ──
 async function writeChunksThrottled(chunks, writeFn) {
   for (let i = 0; i < chunks.length; i += UPLOAD_WAVE) {
     const slice = chunks.slice(i, i + UPLOAD_WAVE);
@@ -874,7 +886,6 @@ async function writeChunksThrottled(chunks, writeFn) {
   }
 }
 
-// ── Throttled download: scarica i chunk a ondate di UPLOAD_WAVE ──
 async function readChunksThrottled(numChunks, readFn) {
   const results = [];
   for (let i = 0; i < numChunks; i += UPLOAD_WAVE) {
@@ -915,12 +926,10 @@ async function sync(silenzioso = true) {
     const base = (id) => doc(db, 'users', _currentUser.uid, 'backup', id);
     const now = Date.now();
 
-    // ── 1. Leggi locale ──
     let locale = (await localforage.getItem(CUSTOM_KEY) || []).map(c => ({
       ...c, savedAt: c.savedAt || now
     }));
 
-    // ── 2. Leggi cloud (throttled) ──
     let cloudCarte = [];
     let cloudDeleted = {};
     try {
@@ -934,7 +943,6 @@ async function sync(silenzioso = true) {
         if (cloudAggiornato > ultimaLettura) {
           const numChunks = meta.chunks || 0;
           if (numChunks > 0) {
-            // FIX 3b: download throttled a ondate
             const chunkSnaps = await readChunksThrottled(
               numChunks,
               idx => getDoc(base('mazzo_chunk_' + idx))
@@ -954,47 +962,38 @@ async function sync(silenzioso = true) {
           cloudCarte = [];
         }
       }
-    } catch (_) { /* offline: usa solo locale */ }
+    } catch (_) { /* offline */ }
 
-    // ── 3. Merge tombstones ──
     const localDeleted = JSON.parse(localStorage.getItem('porky_deleted') || '{}');
     const deleted = purgaTombstones({ ...cloudDeleted, ...localDeleted });
     localStorage.setItem('porky_deleted', JSON.stringify(deleted));
 
-    // ── 4. Merge bidirezionale ──
     const mazzoMerged = await mergeMazzi({ locale, cloud: cloudCarte, deleted });
 
-    // ── 5. Rigenera full-res silente ──
     const { mazzo: mazzoFinale, modificato } = await rigeneraFullResSilente(mazzoMerged);
     if (modificato) localStorage.setItem('porky_last_cloud_read', String(now));
 
-    // ── 6. Salva locale ──
     await localforage.setItem(CUSTOM_KEY, mazzoFinale);
     await aggiornaListaCustom();
 
-    // ── 7. Indice cloud per evitare ricompressioni inutili ──
     const cloudIndex = new Map(cloudCarte.map(c => [c.shash, c.savedAt || 0]));
 
-    // ── 8. Comprimi in batch da 5 (lavoro locale, non upload) ──
     const BATCH = 5;
     const carteCloud = [];
     for (let i = 0; i < mazzoFinale.length; i += BATCH) {
       const slice = mazzoFinale.slice(i, i + BATCH);
       const comp = await Promise.all(slice.map(async c => {
-        // FIX 4: usa prepareForCloud per rimuovere fullRes e _inModifica
         const cartaPulita = prepareForCloud(JSON.parse(JSON.stringify(c)));
         const cloudSavedAt = cloudIndex.get(c.shash);
         if (cloudSavedAt !== undefined && cloudSavedAt === (c.savedAt || 0)) {
           const cartaCloud = cloudCarte.find(cc => cc.shash === c.shash);
           if (cartaCloud && cartaCloud.img) return { ...cartaPulita, img: cartaCloud.img };
         }
-        // FIX 2c: se img è null (carta non ancora rigenerata) non caricare img sul cloud
         return { ...cartaPulita, img: await comprimiImgPerCloud(c.img) };
       }));
       carteCloud.push(...comp);
     }
 
-    // ── 9. Chunk dinamici basati sul peso reale (FIX 5: CHUNK_LIMIT = 500KB) ──
     const chunks = [];
     let chunkCorrente = [], pesoCorrente = 0;
     for (const carta of carteCloud) {
@@ -1009,19 +1008,16 @@ async function sync(silenzioso = true) {
     }
     if (chunkCorrente.length > 0) chunks.push(chunkCorrente);
 
-    // ── 10. Tombstones: purga solo se carta nel mazzo è più recente del tombstone (FIX 6) ──
     const shashNelMazzo = new Map(mazzoFinale.map(c => [c.shash, c.savedAt || 0]));
     const deletedPulito = Object.fromEntries(
       Object.entries(deleted).filter(([s, ts]) => {
         const savedAt = shashNelMazzo.get(s);
-        if (savedAt === undefined) return true;  // non nel mazzo → tieni tombstone
-        return savedAt <= ts;                    // nel mazzo ma più vecchia → tieni tombstone
-        // savedAt > ts → carta è stata ri-aggiunta dopo la cancellazione → rimuovi tombstone
+        if (savedAt === undefined) return true;
+        return savedAt <= ts;
       })
     );
     localStorage.setItem('porky_deleted', JSON.stringify(deletedPulito));
 
-    // ── 11. Scrivi meta ──
     await setDoc(base('mazzo_meta'), {
       aggiornato: now,
       tombstones: deletedPulito,
@@ -1030,13 +1026,10 @@ async function sync(silenzioso = true) {
 
     localStorage.setItem('porky_last_cloud_read', String(now));
 
-    // ── 12. Scrivi chunk in parallelo throttled (FIX 3) ──
     await writeChunksThrottled(chunks, (i, carte) => setDoc(base('mazzo_chunk_' + i), { carte }));
 
-    // ── 13. Elimina chunk obsoleti ──
     const prevChunks = parseInt(localStorage.getItem('porky_prev_chunks') || '0');
     if (prevChunks > chunks.length) {
-      // Elimina a ondate per non sovraccaricare Firestore
       await writeChunksThrottled(
         Array.from({ length: prevChunks - chunks.length }, (_, i) => chunks.length + i),
         (_, idx) => deleteDoc(base('mazzo_chunk_' + idx)).catch(() => {})
@@ -1044,7 +1037,6 @@ async function sync(silenzioso = true) {
     }
     localStorage.setItem('porky_prev_chunks', String(chunks.length));
 
-    // ── 14. Scrivi mazzo_signal ──
     const maxSavedAt = mazzoFinale.reduce((m, c) => Math.max(m, c.savedAt || 0), 0);
     const mazzoHash  = mazzoFinale.length + '_' + maxSavedAt;
     const ultimoHash = localStorage.getItem('porky_last_signal_hash') || '';
@@ -1234,8 +1226,10 @@ document.getElementById('community-search').addEventListener('input', () => {
   const q = document.getElementById('community-search').value.trim().toLowerCase();
   renderCommunity(q ? _communityCards.filter(c => (c.testo || '').toLowerCase().includes(q)) : _communityCards);
 });
- 
-// FIX 2b + FIX 4: import da community → img:null, fullRes:false → rigenerazione locale
+
+// ═══════════════════════════════════════════════════════
+// FIX 2: importaDaCommunity — rigenera subito senza aspettare sync
+// ═══════════════════════════════════════════════════════
 async function importaDaCommunity(carta) {
   let mazzo = await localforage.getItem(CUSTOM_KEY) || [];
  
@@ -1259,8 +1253,15 @@ async function importaDaCommunity(carta) {
   mazzo.push(nuovaCarta);
  
   await localforage.setItem(CUSTOM_KEY, mazzo);
-  await aggiornaListaCustom();
-  await sync(true);
+  await aggiornaListaCustom(); // mostra placeholder con badge ⏳
+
+  // FIX 2: rigenera subito la carta appena aggiunta — l'utente vede la carta reale comparire
+  const mazzoPerRigen = await localforage.getItem(CUSTOM_KEY);
+  const { mazzo: mazzoRigen } = await rigeneraFullResSilente(mazzoPerRigen);
+  await localforage.setItem(CUSTOM_KEY, mazzoRigen);
+  // aggiornaListaCustom è già chiamata dentro rigeneraFullResSilente carta per carta
+
+  sync(true); // fire-and-forget: upload cloud in background, non blocca l'alert
   await customAlert('Carta importata nel mazzo!');
 }
  
@@ -1545,7 +1546,7 @@ document.getElementById('btn-salva').addEventListener('click', async () => {
       hash: null, phash: null, shash, lphash256: null,
       img: injectedDataUrl, nome, originale: nome,
       estratta: false, testo, communityId, savedAt: Date.now(),
-      fullRes: true  // creata localmente: è già full-res
+      fullRes: true
     };
  
     const mazzoFinale = esistente.filter(c => !c._inModifica);
@@ -1589,7 +1590,7 @@ async function aggiornaListaCustom() {
     wrap.className = 'card-item';
  
     const img   = document.createElement('img');
-    img.src     = carta.img || 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'; // placeholder se img null
+    img.src     = carta.img || 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
     img.title   = carta.testo || carta.nome;
     img.style.cursor = 'pointer';
     img.onclick = () => modificaCarta(idx);
@@ -1600,7 +1601,6 @@ async function aggiornaListaCustom() {
       img.title          = '(in modifica) ' + (carta.testo || carta.nome);
     }
 
-    // Indicatore visivo se la carta è ancora in attesa di rigenerazione
     if (!carta.fullRes) {
       wrap.style.position = 'relative';
       const badge = document.createElement('div');
@@ -1709,7 +1709,6 @@ document.getElementById('cerca-mazzo').addEventListener('input', () => {
   });
 });
  
-// FIX 2a: backup senza img nel JSON (le PNG vengono scaricate come file separati come prima)
 document.getElementById('btn-esporta-backup').addEventListener('click', async () => {
   const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
   if (!mazzo.length) { await customAlert('Il mazzo è vuoto, niente da salvare.'); return; }
@@ -1718,9 +1717,6 @@ document.getElementById('btn-esporta-backup').addEventListener('click', async ()
     catch { _cartellaHandle = null; }
   }
 
-  // FIX 2a: esporta JSON senza img e senza fullRes — molto più leggero.
-  // Le immagini vengono scaricate come file PNG separati (vedi sotto).
-  // Al reimport, le carte vengono sempre ridisegnate in fullRes dal browser.
   const mazzoLeggero = mazzo.map(({ img, fullRes, _inModifica, ...rest }) => rest);
 
   const blob     = new Blob([JSON.stringify(mazzoLeggero, null, 2)], { type: 'application/json' });
@@ -1739,7 +1735,6 @@ document.getElementById('btn-esporta-backup').addEventListener('click', async ()
     URL.revokeObjectURL(url);
   }
 
-  // Le PNG vengono ancora scaricate come riferimento visivo offline
   for (const carta of mazzo) {
     if (!carta.img || !carta.nome) continue;
     try {
@@ -1765,8 +1760,11 @@ document.getElementById('btn-esporta-backup').addEventListener('click', async ()
 document.getElementById('btn-importa-backup').addEventListener('click', () => {
   document.getElementById('inp-backup').click();
 });
- 
-// FIX 2b: import JSON → forza img:null e fullRes:false per triggerare sempre la rigenerazione
+
+// ═══════════════════════════════════════════════════════
+// FIX 3: inp-backup — usa il valore di ritorno di rigeneraFullResSilente
+// e salva il mazzo rigenerato prima di chiamare sync
+// ═══════════════════════════════════════════════════════
 document.getElementById('inp-backup').addEventListener('change', async event => {
   const file = event.target.files[0];
   event.target.value = '';
@@ -1776,12 +1774,11 @@ document.getElementById('inp-backup').addEventListener('change', async event => 
     if (!Array.isArray(dati)) { await customAlert('File non valido.'); return; }
  
     const now        = Date.now();
-    // FIX 2b: rimuovi img e imposta fullRes:false → rigenerazione garantita su questo browser
     const datiSanati = await Promise.all(
       dati.map(async c => await garantisciShash({
         ...c,
-        img:     null,   // ignora eventuale img nel JSON (vecchi backup)
-        fullRes: false,  // forza ridisegno in fullRes locale
+        img:     null,
+        fullRes: false,
         savedAt: now
       }))
     );
@@ -1793,31 +1790,46 @@ document.getElementById('inp-backup').addEventListener('change', async event => 
         okText: 'Sostituisci', cancelText: 'Unisci'
       });
       if (scelta) {
+        // ── SOSTITUZIONE ──
         const mazzoFinale = await mergeMazzi({ locale: datiSanati, cloud: [], deleted: {} });
         await localforage.setItem(CUSTOM_KEY, mazzoFinale);
-        await aggiornaListaCustom();
-        // Rigenera subito in fullRes prima di sincronizzare
-        await rigeneraFullResSilente(mazzoFinale);
-        await sync(true);
-        await customAlert('Mazzo sostituito: ' + mazzoFinale.length + ' carte importate.');
+        await aggiornaListaCustom(); // mostra tutte le carte con badge ⏳
+
+        // FIX 3: rigenera progressivamente, poi salva stato finale coerente
+        const { mazzo: mazzoRigen } = await rigeneraFullResSilente(mazzoFinale);
+        await localforage.setItem(CUSTOM_KEY, mazzoRigen);
+        await aggiornaListaCustom(); // aggiornamento finale (rimuove eventuali badge residui)
+
+        sync(true); // upload cloud in background
+        await customAlert('Mazzo sostituito: ' + mazzoRigen.length + ' carte importate.');
       } else {
+        // ── MERGE ──
         const mazzoFinale = await mergeMazzi({ locale: [...esistente, ...datiSanati], cloud: [], deleted: {} });
         const nuove       = mazzoFinale.length - esistente.length;
         await localforage.setItem(CUSTOM_KEY, mazzoFinale);
-        await aggiornaListaCustom();
-        // Rigenera subito in fullRes prima di sincronizzare
-        await rigeneraFullResSilente(mazzoFinale);
-        await sync(true);
+        await aggiornaListaCustom(); // mostra tutte con badge ⏳ sulle nuove
+
+        // FIX 3: rigenera solo le nuove (fullRes:false), le esistenti vengono saltate
+        const { mazzo: mazzoRigen } = await rigeneraFullResSilente(mazzoFinale);
+        await localforage.setItem(CUSTOM_KEY, mazzoRigen);
+        await aggiornaListaCustom(); // aggiornamento finale
+
+        sync(true); // upload cloud in background
         await customAlert('Importate ' + nuove + ' carte nuove, ' + (datiSanati.length - nuove) + ' duplicate ignorate.');
       }
     } else {
+      // ── MAZZO VUOTO ──
       const mazzoFinale = await mergeMazzi({ locale: datiSanati, cloud: [], deleted: {} });
       await localforage.setItem(CUSTOM_KEY, mazzoFinale);
-      await aggiornaListaCustom();
-      // Rigenera subito in fullRes prima di sincronizzare
-      await rigeneraFullResSilente(mazzoFinale);
-      await sync(true);
-      await customAlert('Backup importato: ' + mazzoFinale.length + ' carte.');
+      await aggiornaListaCustom(); // mostra tutte le carte con badge ⏳
+
+      // FIX 3: rigenera progressivamente
+      const { mazzo: mazzoRigen } = await rigeneraFullResSilente(mazzoFinale);
+      await localforage.setItem(CUSTOM_KEY, mazzoRigen);
+      await aggiornaListaCustom(); // aggiornamento finale
+
+      sync(true); // upload cloud in background
+      await customAlert('Backup importato: ' + mazzoRigen.length + ' carte.');
     }
   } catch(e) { await customAlert('Errore importazione:\n' + e.message); }
 });
