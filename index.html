@@ -848,7 +848,16 @@ async function rigeneraFullResSilente(mazzo) {
 async function sync(silenzioso = true) {
   if (!_currentUser) return;
 
-  if (_syncBusy) return;
+  if (_syncBusy) {
+    // Schedula un unico retry — se già schedulato non ne aggiunge altri
+    if (_syncScheduled === null) {
+      _syncScheduled = setTimeout(() => {
+        _syncScheduled = null;
+        sync(silenzioso);
+      }, 2000);
+    }
+    return;
+  }
 
   // Cancella eventuale retry pendente: questa sync lo sostituisce
   if (_syncScheduled !== null) {
@@ -978,20 +987,7 @@ async function sync(silenzioso = true) {
     localStorage.setItem('porky_last_cloud_read', String(now));
 
     // ── 12. Scrivi chunk in parallelo ──
-    const PARALLEL = 2;
-    for (let i = 0; i < chunks.length; i += PARALLEL) {
-      const slice = chunks.slice(i, i + PARALLEL);
-      await Promise.all(slice.map((c, j) =>
-        setDoc(base('mazzo_chunk_' + (i + j)), { carte: c })
-      ));
-    }
-    
-    // Piccolo delay generale
-    await new Promise(r => setTimeout(r, 50));
-    
-    // Aggiorna timestamp e ridisegna mazzo locale
-    localStorage.setItem('porky_last_cloud_read', String(now));
-    await aggiornaListaCustom();
+    await Promise.all(chunks.map((carte, i) => setDoc(base('mazzo_chunk_' + i), { carte })));
 
     // ── 13. Elimina chunk obsoleti ──
     const prevChunks = parseInt(localStorage.getItem('porky_prev_chunks') || '0');
