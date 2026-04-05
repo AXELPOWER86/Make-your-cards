@@ -772,7 +772,8 @@ async function mergeMazzi({ locale, cloud, deleted }) {
 async function rigeneraFullResSilente(mazzo) {
   let modificato = false;
 
-  // Carte da rigenerare: solo quelle senza img e senza fullRes
+  // Carte da rigenerare: tutte quelle senza fullRes (indipendentemente da img)
+  // Le carte da backup JSON hanno img ma fullRes assente/false → vanno ridisegnate
   const daRigenerare = mazzo.filter(c => c.testo && c.testo.trim() && !c.fullRes);
   if (!daRigenerare.length) return { mazzo, modificato };
 
@@ -794,7 +795,7 @@ async function rigeneraFullResSilente(mazzo) {
   try {
     for (let i = 0; i < mazzo.length; i++) {
       const carta = mazzo[i];
-      if (carta.fullRes || carta.img || !carta.testo || !carta.testo.trim()) continue;
+      if (carta.fullRes || !carta.testo || !carta.testo.trim()) continue;
 
       try {
         // Scrivi testo nel clone, mai nel DOM visibile
@@ -828,9 +829,10 @@ async function rigeneraFullResSilente(mazzo) {
         mazzo[i] = { ...carta, img: fullRes, shash, fullRes: true, savedAt: Date.now() };
         modificato = true;
 
-        // Aggiorna il mazzo locale e la lista dopo ogni carta rigenerata
+        // Salva e aggiorna solo la thumbnail di questa carta nel DOM,
+        // senza ricostruire tutta la lista (evita reflow e freeze)
         await localforage.setItem(CUSTOM_KEY, mazzo);
-        await aggiornaListaCustom();
+        aggiornaCardNelDom(i, fullRes);
 
       } catch(e) {
         console.warn('rigeneraFullRes: errore su carta', carta.testo, e);
@@ -840,6 +842,9 @@ async function rigeneraFullResSilente(mazzo) {
     // Rimuovi sempre il clone, anche in caso di errore
     document.body.removeChild(clone);
   }
+
+  // Aggiorna la lista completa una sola volta alla fine
+  if (modificato) await aggiornaListaCustom();
 
   return { mazzo, modificato };
 }
@@ -893,9 +898,16 @@ async function sync(silenzioso = true) {
           // Cloud più recente del nostro ultimo fetch → scarica i chunk
           const numChunks = meta.chunks || 0;
           if (numChunks > 0) {
-            const chunkSnaps = await Promise.all(
-              Array.from({ length: numChunks }, (_, i) => getDoc(base('mazzo_chunk_' + i)))
-            );
+            // Scarica i chunk a ondate (max 2 alla volta, pausa 15s) per non sovraccaricare Firestore
+            const DOWNLOAD_WAVE     = 2;
+            const DOWNLOAD_PAUSE_MS = 15000;
+            const chunkSnaps = [];
+            for (let i = 0; i < numChunks; i += DOWNLOAD_WAVE) {
+              const indices = Array.from({ length: Math.min(DOWNLOAD_WAVE, numChunks - i) }, (_, j) => i + j);
+              const batch   = await Promise.all(indices.map(idx => getDoc(base('mazzo_chunk_' + idx))));
+              chunkSnaps.push(...batch);
+              if (i + DOWNLOAD_WAVE < numChunks) await new Promise(r => setTimeout(r, DOWNLOAD_PAUSE_MS));
+            }
             const localeShash = new Set(locale.map(c => c.shash).filter(Boolean));
             for (const cs of chunkSnaps) {
               if (cs.exists()) {
@@ -986,18 +998,25 @@ async function sync(silenzioso = true) {
     // così questo dispositivo non riscarica i propri chunk al prossimo sync
     localStorage.setItem('porky_last_cloud_read', String(now));
 
-    // ── 12. Scrivi chunk in parallelo ──
-    await Promise.all(chunks.map((carte, i) => setDoc(base('mazzo_chunk_' + i), { carte })));
+    // ── 12. Scrivi chunk a ondate (max 2 alla volta, pausa 15s) ──
+    // Evita errori 429/400 da Firestore con molti chunk in parallelo
+    const UPLOAD_WAVE     = 2;
+    const UPLOAD_PAUSE_MS = 15000;
+    for (let i = 0; i < chunks.length; i += UPLOAD_WAVE) {
+      const slice = chunks.slice(i, i + UPLOAD_WAVE);
+      await Promise.all(slice.map((carte, j) => setDoc(base('mazzo_chunk_' + (i + j)), { carte })));
+      if (i + UPLOAD_WAVE < chunks.length) await new Promise(r => setTimeout(r, UPLOAD_PAUSE_MS));
+    }
 
-    // ── 13. Elimina chunk obsoleti ──
+    // ── 13. Elimina chunk obsoleti (a ondate) ──
     const prevChunks = parseInt(localStorage.getItem('porky_prev_chunks') || '0');
-    const chunksChanged = prevChunks !== chunks.length;
     if (prevChunks > chunks.length) {
-      await Promise.all(
-        Array.from({ length: prevChunks - chunks.length }, (_, i) =>
-          deleteDoc(base('mazzo_chunk_' + (chunks.length + i))).catch(() => {})
-        )
-      );
+      const daEliminare = Array.from({ length: prevChunks - chunks.length }, (_, i) => chunks.length + i);
+      for (let i = 0; i < daEliminare.length; i += UPLOAD_WAVE) {
+        const slice = daEliminare.slice(i, i + UPLOAD_WAVE);
+        await Promise.all(slice.map(idx => deleteDoc(base('mazzo_chunk_' + idx)).catch(() => {})));
+        if (i + UPLOAD_WAVE < daEliminare.length) await new Promise(r => setTimeout(r, UPLOAD_PAUSE_MS));
+      }
     }
     localStorage.setItem('porky_prev_chunks', String(chunks.length));
 
@@ -1215,7 +1234,9 @@ async function importaDaCommunity(carta) {
     ...cartaConShash,
     estratta: false,
     _inModifica: false,
-    savedAt: Date.now()
+    savedAt: Date.now(),
+    img: null,      // forza ridisegno locale in fullRes tramite rigeneraFullResSilente
+    fullRes: false
   };
   mazzo.push(nuovaCarta);
  
@@ -1541,6 +1562,17 @@ document.getElementById('btn-condividi-preview').addEventListener('click', async
   await condividiInCommunity(carta);
 });
  
+async function aggiornaCardNelDom(idx, nuovaImg) {
+  // Aggiorna solo la thumbnail della carta all'indice idx
+  // senza ricostruire tutto il DOM della lista
+  const lista = document.getElementById('lista-custom');
+  const items = lista.querySelectorAll('.card-item');
+  if (items[idx]) {
+    const imgEl = items[idx].querySelector('img');
+    if (imgEl) imgEl.src = nuovaImg;
+  }
+}
+
 async function aggiornaListaCustom() {
   const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
   document.getElementById('contatore-custom').textContent = mazzo.length;
@@ -1720,7 +1752,12 @@ document.getElementById('inp-backup').addEventListener('change', async event => 
  
     const now         = Date.now();
     const datiSanati  = await Promise.all(
-      dati.map(async c => await garantisciShash({ ...c, savedAt: now }))
+      dati.map(async c => await garantisciShash({
+        ...c,
+        img:     null,   // ignora img eventualmente presente nel JSON
+        fullRes: false,  // forza ridisegno in fullRes su questo browser
+        savedAt: now
+      }))
     );
  
     const esistente = await localforage.getItem(CUSTOM_KEY) || [];
