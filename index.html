@@ -851,13 +851,14 @@ async function sync(silenzioso = true) {
     await aggiornaListaCustom();
 
     // Scrivi cloud carta per carta (evita oversize)
+    const mazzoDocRef = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo_doc');
+    
     for (const c of mazzoFinale) {
       const { _inModifica, ...rest } = c;
       const cartaCloud = { ...rest, img: await comprimiImgPerCloud(c.img) };
     
-      // Usa una sottocollezione 'carte' dentro il documento 'mazzo'
       await setDoc(
-        doc(db, 'users', _currentUser.uid, 'backup', 'mazzo', 'mazzo_doc', 'carte', c.shash || crypto.randomUUID()),
+        doc(mazzoDocRef, 'carte', c.shash || crypto.randomUUID()),
         cartaCloud,
         { merge: true }
       );
@@ -869,8 +870,13 @@ async function sync(silenzioso = true) {
       Object.entries(deleted).filter(([shash]) => !shashNelMazzo.has(shash))
     );
     localStorage.setItem('porky_deleted', JSON.stringify(deletedPulito));
-    await setDoc(doc(db, 'users', _currentUser.uid, 'backup', 'mazzo_tombstones'), { tombstones: deletedPulito, aggiornato: now }, { merge: true });
-
+    
+    await setDoc(
+      doc(db, 'users', _currentUser.uid, 'backup', 'mazzo_tombstones'),
+      { tombstones: deletedPulito, aggiornato: now },
+      { merge: true }
+    );
+    
   } catch(e) {
     console.error('sync error:', e);
   } finally {
