@@ -819,6 +819,11 @@ async function rigeneraFullResSilente(mazzo) {
         await aggiornaListaCustom();
         if (_regenCount % 15 === 0) {
           sync(true);
+          // Notifica subito gli altri browser senza aspettare la fine di sync
+          if (_currentUser) {
+            const signalRef = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo_signal');
+            setDoc(signalRef, { t: Date.now() }).catch(() => {});
+          }
         }
       } catch(e) {
         console.warn('rigeneraFullRes: errore su carta', carta.testo, e);
