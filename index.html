@@ -800,7 +800,7 @@ async function rigeneraFullResSilente(mazzo) {
         console.log('card-bg naturalWidth:', document.getElementById('card-bg').naturalWidth);
         const canvas = await html2canvas(document.getElementById('card-container'), {
           scale: 3, useCORS: true, allowTaint: true,
-          backgroundColor: null, logging: false, imageTimeout: 10000
+          backgroundColor: null, logging: true, imageTimeout: 15000, useCORS: false
         });
         console.log('canvas size:', canvas.width, canvas.height, 'dataUrl length:', canvas.toDataURL('image/png').length);
         const dataUrl = canvas.toDataURL('image/png');
