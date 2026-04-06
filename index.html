@@ -759,7 +759,7 @@ async function mergeMazzi({ locale, cloud, deleted }) {
     } else {
       const loc = map.get(cc.shash);
       if ((cc.savedAt || 0) > (loc.savedAt || 0)) {
-        map.set(cc.shash, { ...cc, img: loc.img });
+        map.set(cc.shash, { ...cc, img: loc.img, fullRes: loc.fullRes || false });
       }
     }
   }
@@ -941,9 +941,9 @@ async function sync(silenzioso = true) {
     await aggiornaListaCustom();
 
     // ── 5b. Rigenera full-res silente (non-blocking, parte dopo il salvataggio) ──
-    rigeneraFullResSilente(mazzoFinale).then(({ modificato }) => {
-      if (modificato) sync(true);
-    });
+    // rigeneraFullResSilente(mazzoFinale).then(({ modificato }) => {
+    //  if (modificato) sync(true);
+    // });
 
     // ── 7. Indice cloud per evitare ricompressioni inutili ──
     const cloudIndex = new Map(cloudCarte.map(c => [c.shash, c.savedAt || 0]));
@@ -1874,6 +1874,10 @@ window.addEventListener('load', async () => {
  
   if (!auth.currentUser) {
     await aggiornaListaCustom();
+    const mazzoCorrente = await localforage.getItem(CUSTOM_KEY) || [];
+    if (mazzoCorrente.some(c => c.testo && !c.fullRes)) {
+      rigeneraFullResSilente(mazzoCorrente);
+    }
     const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
     if (mazzo.length === 0) {
       if (await customConfirm({ message: 'Il mazzo è vuoto.\nVuoi importare un Backup Mazzo?', okText: 'SI', cancelText: 'NO' })) {
