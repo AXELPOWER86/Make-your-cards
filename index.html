@@ -910,6 +910,7 @@ async function sync(silenzioso = true) {
 
     // ── 4. Merge bidirezionale ──
     const mazzoMerged = await mergeMazzi({ locale, cloud: cloudCarte, deleted });
+    console.log('mazzoMerged:', mazzoMerged.length, 'da rigenera:', mazzoMerged.filter(c => c.testo && !c.fullRes).length);
 
     // ── 5. Salva locale post-merge ──
     const mazzoFinale = mazzoMerged;
@@ -918,6 +919,7 @@ async function sync(silenzioso = true) {
 
     // ── 5b. Rigenera full-res silente ──
     const { mazzo: mazzoRigen, modificato } = await rigeneraFullResSilente(mazzoFinale);
+    console.log('modificato:', modificato);
     if (modificato) {
       await localforage.setItem(CUSTOM_KEY, mazzoRigen);
       await aggiornaListaCustom();
