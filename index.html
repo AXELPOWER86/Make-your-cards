@@ -777,8 +777,7 @@ async function rigeneraFullResSilente(mazzo) {
 
   // Salva lo stato attuale dell'editor per ripristinarlo alla fine
   const testoOriginale = document.getElementById('inp-body').value;
-  document.getElementById('card-container').style.visibility = 'hidden';
-
+  
   try {
     for (let i = 0; i < mazzo.length; i++) {
       const carta = mazzo[i];
@@ -821,7 +820,6 @@ async function rigeneraFullResSilente(mazzo) {
   } finally {
     // Ripristina sempre il testo originale dell'editor
     document.getElementById('inp-body').value = testoOriginale;
-    document.getElementById('card-container').style.visibility = '';
     document.getElementById('card-body-inner').textContent = testoOriginale.toUpperCase();
     if (testoOriginale.trim()) autoFit();
     else document.getElementById('card-body-inner').style.fontSize = '';
