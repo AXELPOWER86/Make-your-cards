@@ -448,6 +448,12 @@ input[type="file"] { display: none; }
     <input type="file" id="inp-backup" accept=".json">
   </div>
   <div id="lista-custom"></div>
+  <div style="width:100%;margin-top:10px;text-align:right;">
+    <button class="btn-cancella-tutto" id="btn-ridisegna"
+      style="background:linear-gradient(145deg,#a45de6,#6f2aa8);margin-left:0;">
+      🔄 Ridisegna carte
+    </button>
+</div>
 </div>
 
 <div id="communityOverlay">
@@ -929,14 +935,9 @@ async function sync(silenzioso = true) {
     for (let i = 0; i < mazzoFinale.length; i += BATCH) {
       const slice = mazzoFinale.slice(i, i + BATCH);
       const comp = await Promise.all(slice.map(async c => {
-        const { _inModifica, fullRes, ...rest } = c;
+        const { _inModifica, fullRes, img, ...rest } = c;
         const cartaPulita = JSON.parse(JSON.stringify(rest));
-        const cloudSavedAt = cloudIndex.get(c.shash);
-        if (cloudSavedAt !== undefined && cloudSavedAt === (c.savedAt || 0)) {
-          const cartaCloud = cloudCarte.find(cc => cc.shash === c.shash);
-          if (cartaCloud && cartaCloud.img) return { ...cartaPulita, img: cartaCloud.img };
-        }
-        return { ...cartaPulita, img: await comprimiImgPerCloud(c.img) };
+        return { ...cartaPulita, img: null };
       }));
       carteCloud.push(...comp);
     }
@@ -1109,6 +1110,19 @@ document.getElementById('btn-community').addEventListener('click', async () => {
  
 document.getElementById('btn-chiudi-community').addEventListener('click', () => {
   document.getElementById('communityOverlay').style.display = 'none';
+});
+
+document.getElementById('btn-ridisegna').addEventListener('click', async () => {
+  const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
+  if (!mazzo.length) { await customAlert('Il mazzo è vuoto.'); return; }
+  // Forza fullRes:false su tutte le carte per rigenerarle tutte
+  const mazzoReset = mazzo.map(c => ({ ...c, fullRes: false, img: null }));
+  await localforage.setItem(CUSTOM_KEY, mazzoReset);
+  await aggiornaListaCustom();
+  const { mazzo: mazzoRigen } = await rigeneraFullResSilente(mazzoReset);
+  await localforage.setItem(CUSTOM_KEY, mazzoRigen);
+  await aggiornaListaCustom();
+  sync(true);
 });
  
 async function caricaCommunity() {
