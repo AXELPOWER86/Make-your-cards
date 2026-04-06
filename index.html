@@ -841,6 +841,7 @@ async function rigeneraFullResSilente(mazzo) {
         await localforage.setItem(CUSTOM_KEY, mazzo);
         await aggiornaListaCustom();
         if (_regenCount % 15 === 0 && _currentUser) {
+          console.log('sync parziale a carta', _regenCount, 'currentUser:', !!_currentUser);
         // Scrivi i chunk parziali direttamente senza passare per sync()
         // (sync() potrebbe essere già in esecuzione con _syncBusy=true)
         try {
@@ -869,7 +870,7 @@ async function rigeneraFullResSilente(mazzo) {
             await setDoc(base('mazzo_chunk_' + i), { carte: chunks[i] });
           }
           // Notifica altri browser
-          await setDoc(base('mazzo_signal'), { t: now }).catch(() => {});
+          await setDoc(base('mazzo_signal'), { t: now }).catch(() => {console.log('mazzo_signal scritto a carta', _regenCount);});
           localStorage.setItem('porky_last_signal_hash', '');
           localStorage.setItem('porky_last_cloud_read', String(now));
         } catch(e) {
@@ -1104,6 +1105,7 @@ function avviaAutoSync() {
   // altri dispositivi, mai da sync() stessa → nessun loop
   const signalRef = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo_signal');
   _unsubscribe = onSnapshot(signalRef, () => {
+    console.log('onSnapshot ricevuto sul secondo browser');
     localStorage.removeItem('porky_last_cloud_read');
     sync(true);
   });
