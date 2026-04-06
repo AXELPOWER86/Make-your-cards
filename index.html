@@ -781,7 +781,7 @@ async function rigeneraFullResSilente(mazzo) {
   const originale = document.getElementById('card-container');
   const clone = originale.cloneNode(true);
   clone.id = 'card-container-offscreen';
-  clone.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:360px;pointer-events:none;opacity:0;';
+  clone.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:360px;pointer-events:none;visibility:hidden;';
   document.body.appendChild(clone);
 
   // Carica lo stesso sfondo del card-bg originale nel clone
@@ -838,7 +838,7 @@ async function rigeneraFullResSilente(mazzo) {
         // Salva e aggiorna solo la thumbnail di questa carta nel DOM,
         // senza ricostruire tutta la lista (evita reflow e freeze)
         await localforage.setItem(CUSTOM_KEY, mazzo);
-        aggiornaCardNelDom(i, fullRes);
+        await aggiornaListaCustom();
 
       } catch(e) {
         console.warn('rigeneraFullRes: errore su carta', carta.testo, e);
@@ -946,10 +946,12 @@ async function sync(silenzioso = true) {
     await localforage.setItem(CUSTOM_KEY, mazzoFinale);
     await aggiornaListaCustom();
 
-    // ── 5b. Rigenera full-res silente (non-blocking, parte dopo il salvataggio) ──
-    // rigeneraFullResSilente(mazzoFinale).then(({ modificato }) => {
-    //  if (modificato) sync(true);
-    // });
+    // ── 5b. Rigenera full-res silente ──
+    const { modificato } = await rigeneraFullResSilente(mazzoFinale);
+    if (modificato) {
+      await localforage.setItem(CUSTOM_KEY, mazzoFinale);
+      await aggiornaListaCustom();
+    }
 
     // ── 7. Indice cloud per evitare ricompressioni inutili ──
     const cloudIndex = new Map(cloudCarte.map(c => [c.shash, c.savedAt || 0]));
@@ -1250,8 +1252,10 @@ async function importaDaCommunity(carta) {
  
   await localforage.setItem(CUSTOM_KEY, mazzo);
   await aggiornaListaCustom();
-  await rigeneraFullResSilente(mazzo);
-  await sync(true);
+  const mazzoPerRigen = await localforage.getItem(CUSTOM_KEY);
+  const { mazzo: mazzoRigenC } = await rigeneraFullResSilente(mazzoPerRigen);
+  await localforage.setItem(CUSTOM_KEY, mazzoRigenC);
+  sync(true);
   await customAlert('Carta importata nel mazzo!');
 }
  
@@ -1710,7 +1714,8 @@ document.getElementById('btn-esporta-backup').addEventListener('click', async ()
     try { _cartellaHandle = await window.showDirectoryPicker({ mode: 'readwrite' }); }
     catch { _cartellaHandle = null; }
   }
-  const blob     = new Blob([JSON.stringify(mazzo, null, 2)], { type: 'application/json' });
+  const mazzoLeggero = mazzo.map(({ img, fullRes, _inModifica, ...rest }) => rest);
+  const blob     = new Blob([JSON.stringify(mazzoLeggero, null, 2)], { type: 'application/json' });
   const filename = 'mazzo_custom_backup.json';
   if (_cartellaHandle) {
     try {
@@ -1779,25 +1784,31 @@ document.getElementById('inp-backup').addEventListener('change', async event => 
         const mazzoFinale = await mergeMazzi({ locale: datiSanati, cloud: [], deleted: {} });
         await localforage.setItem(CUSTOM_KEY, mazzoFinale);
         await aggiornaListaCustom();
-        await rigeneraFullResSilente(mazzoFinale);
-        await sync(true);
-        await customAlert('Mazzo sostituito: ' + mazzoFinale.length + ' carte importate.');
+        const { mazzo: mazzoRigenS } = await rigeneraFullResSilente(mazzoFinale);
+        await localforage.setItem(CUSTOM_KEY, mazzoRigenS);
+        await aggiornaListaCustom();
+        sync(true);
+        await customAlert('Mazzo sostituito: ' + mazzoRigenS.length + ' carte importate.');
       } else {
         const mazzoFinale = await mergeMazzi({ locale: [...esistente, ...datiSanati], cloud: [], deleted: {} });
         const nuove       = mazzoFinale.length - esistente.length;
         await localforage.setItem(CUSTOM_KEY, mazzoFinale);
         await aggiornaListaCustom();
-        await rigeneraFullResSilente(mazzoFinale);
-        await sync(true);
+        const { mazzo: mazzoRigenM } = await rigeneraFullResSilente(mazzoFinale);
+        await localforage.setItem(CUSTOM_KEY, mazzoRigenM);
+        await aggiornaListaCustom();
+        sync(true);
         await customAlert('Importate ' + nuove + ' carte nuove, ' + (datiSanati.length - nuove) + ' duplicate ignorate.');
       }
     } else {
       const mazzoFinale = await mergeMazzi({ locale: datiSanati, cloud: [], deleted: {} });
       await localforage.setItem(CUSTOM_KEY, mazzoFinale);
       await aggiornaListaCustom();
-      await rigeneraFullResSilente(mazzoFinale);
-      await sync(true);
-      await customAlert('Backup importato: ' + mazzoFinale.length + ' carte.');
+      const { mazzo: mazzoRigenV } = await rigeneraFullResSilente(mazzoFinale);
+      await localforage.setItem(CUSTOM_KEY, mazzoRigenV);
+      await aggiornaListaCustom();
+      sync(true);
+      await customAlert('Backup importato: ' + mazzoRigenV.length + ' carte.');
     }
   } catch(e) { await customAlert('Errore importazione:\n' + e.message); }
 });
@@ -1885,16 +1896,9 @@ window.addEventListener('load', async () => {
       if (await customConfirm({ message: 'Il mazzo è vuoto.\nVuoi importare un Backup Mazzo?', okText: 'SI', cancelText: 'NO' })) {
         document.getElementById('inp-backup').click();
       }
-    } else if (mazzo.some(c => c.testo && !c.fullRes)) {
-      rigeneraFullResSilente(mazzo);
     }
-  } else {
-    // loggato: la sync parte già da onAuthStateChanged,
-    // ma se ci sono carte fantasma già in locale le rigenera subito
-    const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
-    if (mazzo.some(c => c.testo && !c.fullRes)) {
-      rigeneraFullResSilente(mazzo);
-    }
+    // Note: se ci sono carte senza fullRes, sync() le rigenererà al login.
+    // Se non loggati, restano con badge ⏳ fino al prossimo accesso.
   }
 });
 </script>
