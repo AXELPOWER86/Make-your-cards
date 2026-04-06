@@ -772,7 +772,7 @@ async function mergeMazzi({ locale, cloud, deleted }) {
 async function rigeneraFullResSilente(mazzo) {
   let modificato = false;
 
-  const daRigenerare = mazzo.filter(c => c.testo && c.testo.trim() && !c.fullRes);
+  const daRigenerare = mazzo.filter(c => c.testo && c.testo.trim() && (!c.fullRes || !imgSembraValida(c.img)));
   if (!daRigenerare.length) return { mazzo, modificato };
 
   // Salva lo stato attuale dell'editor per ripristinarlo alla fine
@@ -782,7 +782,7 @@ async function rigeneraFullResSilente(mazzo) {
   try {
     for (let i = 0; i < mazzo.length; i++) {
       const carta = mazzo[i];
-      if (carta.fullRes || !carta.testo || !carta.testo.trim()) continue;
+      if ((carta.fullRes && imgSembraValida(carta.img)) || !carta.testo || !carta.testo.trim()) continue;
 
       try {
         // Scrivi il testo nel DOM visibile esattamente come fa l'utente
@@ -825,6 +825,9 @@ async function rigeneraFullResSilente(mazzo) {
   return { mazzo, modificato };
 }
  
+function imgSembraValida(img) {
+  return img && img.length > 500;
+}
 
 async function sync(silenzioso = true) {
   if (!_currentUser) return;
@@ -910,7 +913,6 @@ async function sync(silenzioso = true) {
 
     // ── 4. Merge bidirezionale ──
     const mazzoMerged = await mergeMazzi({ locale, cloud: cloudCarte, deleted });
-    console.log('mazzoMerged:', mazzoMerged.length, 'da rigenera:', mazzoMerged.filter(c => c.testo && !c.fullRes).length);
 
     // ── 5. Salva locale post-merge ──
     const mazzoFinale = mazzoMerged;
@@ -919,7 +921,6 @@ async function sync(silenzioso = true) {
 
     // ── 5b. Rigenera full-res silente ──
     const { mazzo: mazzoRigen, modificato } = await rigeneraFullResSilente(mazzoFinale);
-    console.log('modificato:', modificato);
     if (modificato) {
       await localforage.setItem(CUSTOM_KEY, mazzoRigen);
       await aggiornaListaCustom();
