@@ -610,7 +610,6 @@ let _syncTimer      = null;
 let _unsubscribe    = null;
 let _syncBusy       = false;
 let _syncScheduled = null;
-let _regenCount     = 0;
  
 localforage.config({ name: 'PorkysGame', storeName: 'mazzo_carte' });
  
@@ -802,7 +801,6 @@ async function mergeMazzi({ locale, cloud, deleted }) {
  
 async function rigeneraFullResSilente(mazzo) {
   let modificato = false;
-  _regenCount = 0;
 
   const daRigenerare = mazzo.filter(c => c.testo && c.testo.trim() && !c.fullRes);
   if (!daRigenerare.length) return { mazzo, modificato };
@@ -836,48 +834,10 @@ async function rigeneraFullResSilente(mazzo) {
 
         mazzo[i] = { ...carta, img: fullRes, shash, fullRes: true, savedAt: Date.now() };
         modificato = true;
-        _regenCount++;
 
         await localforage.setItem(CUSTOM_KEY, mazzo);
         await aggiornaListaCustom();
-        if (_regenCount % 15 === 0 && _currentUser) {
-          console.log('sync parziale a carta', _regenCount, 'currentUser:', !!_currentUser);
-        // Scrivi i chunk parziali direttamente senza passare per sync()
-        // (sync() potrebbe essere già in esecuzione con _syncBusy=true)
-        try {
-          const base = (id) => doc(db, 'users', _currentUser.uid, 'backup', id);
-          const now = Date.now();
-          // Comprimi e scrivi solo le carte già ridisegnate fino a questo punto
-          const mazzoFinora = mazzo.filter(c => c.fullRes && c.img);
-          const carteCloud = mazzoFinora.map(c => {
-            const { _inModifica, fullRes, img, ...rest } = c;
-            return { ...JSON.parse(JSON.stringify(rest)), img: null };
-          });
-          const CHUNK_LIMIT = 700 * 1024;
-          const chunks = [];
-          let chunkCorrente = [], pesoCorrente = 0;
-          for (const carta of carteCloud) {
-            const peso = (carta.img || '').length;
-            if (chunkCorrente.length > 0 && pesoCorrente + peso > CHUNK_LIMIT) {
-              chunks.push(chunkCorrente); chunkCorrente = []; pesoCorrente = 0;
-            }
-            chunkCorrente.push(carta); pesoCorrente += peso;
-          }
-          if (chunkCorrente.length > 0) chunks.push(chunkCorrente);
-          // Scrivi meta e chunk
-          await setDoc(base('mazzo_meta'), { aggiornato: now, chunks: chunks.length }, { merge: true });
-          for (let i = 0; i < chunks.length; i++) {
-            await setDoc(base('mazzo_chunk_' + i), { carte: chunks[i] });
-          }
-          // Notifica altri browser
-          await setDoc(base('mazzo_signal'), { t: now }).catch(() => {console.log('mazzo_signal scritto a carta', _regenCount);});
-          localStorage.setItem('porky_last_signal_hash', '');
-          localStorage.setItem('porky_last_cloud_read', String(now));
         } catch(e) {
-          console.warn('sync parziale ogni 15 carte fallita:', e);
-        }
-      }
-      } catch(e) {
         console.warn('rigeneraFullRes: errore su carta', carta.testo, e);
       }
     }
@@ -1105,7 +1065,6 @@ function avviaAutoSync() {
   // altri dispositivi, mai da sync() stessa → nessun loop
   const signalRef = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo_signal');
   _unsubscribe = onSnapshot(signalRef, () => {
-    console.log('onSnapshot ricevuto sul secondo browser');
     localStorage.removeItem('porky_last_cloud_read');
     sync(true);
   });
