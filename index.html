@@ -810,10 +810,13 @@ async function rigeneraFullResSilente(mazzo) {
 
         mazzo[i] = { ...carta, img: fullRes, shash, fullRes: true, savedAt: Date.now() };
         modificato = true;
+        _regenCount++;
 
         await localforage.setItem(CUSTOM_KEY, mazzo);
         await aggiornaListaCustom();
-
+        if (_regenCount % 15 === 0) {
+          sync(true);
+        }
       } catch(e) {
         console.warn('rigeneraFullRes: errore su carta', carta.testo, e);
       }
