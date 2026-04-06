@@ -790,6 +790,7 @@ async function rigeneraFullResSilente(mazzo) {
         document.getElementById('card-body-inner').textContent = carta.testo.toUpperCase();
         await new Promise(r => document.fonts.ready.then(r));
         autoFit();
+        console.log('ridisegno carta:', carta.testo, 'fontSize:', document.getElementById('card-body-inner').style.fontSize);
         await new Promise(r => requestAnimationFrame(r));
 
         // Cattura con html2canvas sul card-container reale — identico a btn-salva
@@ -798,6 +799,7 @@ async function rigeneraFullResSilente(mazzo) {
           scale: 3, useCORS: true, allowTaint: true,
           backgroundColor: null, logging: false, imageTimeout: 10000
         });
+        console.log('canvas size:', canvas.width, canvas.height, 'dataUrl length:', canvas.toDataURL('image/png').length);
         const dataUrl = canvas.toDataURL('image/png');
         const rawBuf  = await (await fetch(dataUrl)).arrayBuffer();
         const pngBuf  = injectPngTextChunk(rawBuf, 'porky_shash', shash);
