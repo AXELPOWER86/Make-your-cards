@@ -917,9 +917,9 @@ async function sync(silenzioso = true) {
     await aggiornaListaCustom();
 
     // ── 5b. Rigenera full-res silente ──
-    const { modificato } = await rigeneraFullResSilente(mazzoFinale);
+    const { mazzo: mazzoRigen, modificato } = await rigeneraFullResSilente(mazzoFinale);
     if (modificato) {
-      await localforage.setItem(CUSTOM_KEY, mazzoFinale);
+      await localforage.setItem(CUSTOM_KEY, mazzoRigen);
       await aggiornaListaCustom();
     }
 
