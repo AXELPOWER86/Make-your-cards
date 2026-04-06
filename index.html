@@ -778,6 +778,7 @@ async function mergeMazzi({ locale, cloud, deleted }) {
  
 async function rigeneraFullResSilente(mazzo) {
   let modificato = false;
+  _regenCount = 0;
 
   const daRigenerare = mazzo.filter(c => c.testo && c.testo.trim() && !c.fullRes);
   if (!daRigenerare.length) return { mazzo, modificato };
