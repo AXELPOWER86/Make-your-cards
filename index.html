@@ -781,13 +781,19 @@ async function rigeneraFullResSilente(mazzo) {
   const originale = document.getElementById('card-container');
   const clone = originale.cloneNode(true);
   clone.id = 'card-container-offscreen';
-  clone.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:360px;pointer-events:none;visibility:hidden;';
+  clone.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:360px;pointer-events:none;opacity:0;';
   document.body.appendChild(clone);
 
   // Carica lo stesso sfondo del card-bg originale nel clone
   const bgSrc = document.getElementById('card-bg').src;
   clone.querySelector('#card-bg').id  = 'card-bg-offscreen';
   clone.querySelector('#card-bg-offscreen').src = bgSrc;
+  await new Promise(resolve => {
+    const bgEl = clone.querySelector('#card-bg-offscreen');
+    if (bgEl.complete) { resolve(); return; }
+    bgEl.onload = resolve;
+    bgEl.onerror = resolve;
+  });
   const innerClone = clone.querySelector('#card-body-inner');
   innerClone.id = 'card-body-inner-offscreen';
   const bodyClone  = clone.querySelector('#card-body');
@@ -1874,15 +1880,20 @@ window.addEventListener('load', async () => {
  
   if (!auth.currentUser) {
     await aggiornaListaCustom();
-    const mazzoCorrente = await localforage.getItem(CUSTOM_KEY) || [];
-    if (mazzoCorrente.some(c => c.testo && !c.fullRes)) {
-      rigeneraFullResSilente(mazzoCorrente);
-    }
     const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
     if (mazzo.length === 0) {
       if (await customConfirm({ message: 'Il mazzo è vuoto.\nVuoi importare un Backup Mazzo?', okText: 'SI', cancelText: 'NO' })) {
         document.getElementById('inp-backup').click();
       }
+    } else if (mazzo.some(c => c.testo && !c.fullRes)) {
+      rigeneraFullResSilente(mazzo);
+    }
+  } else {
+    // loggato: la sync parte già da onAuthStateChanged,
+    // ma se ci sono carte fantasma già in locale le rigenera subito
+    const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
+    if (mazzo.some(c => c.testo && !c.fullRes)) {
+      rigeneraFullResSilente(mazzo);
     }
   }
 });
