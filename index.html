@@ -406,7 +406,7 @@ input[type="file"] { display: none; }
       <label for="inp-body" style="margin:0;">Scrivi il testo:</label>
       <div style="display:flex;gap:6px;">
         <button onclick="setColoreCarta('standard')" title="Colore standard"
-          style="width:28px;height:28px;border-radius:50%;background:#f5e6c8;border:2px solid #502369;cursor:pointer;font-size:10px;font-weight:bold;color:#502369;padding:0;">St</button>
+          style="width:28px;height:28px;border-radius:50%;background:#f5e6c8;border:2px solid #502369;cursor:pointer;font-size:10px;font-weight:bold;color:#502369;padding:0;"></button>
         <button onclick="setColoreCarta('black')" title="Nero"
           style="width:28px;height:28px;border-radius:50%;background:#111;border:2px solid #502369;cursor:pointer;"></button>
         <button onclick="setColoreCarta('red')" title="Rosso"
@@ -840,12 +840,40 @@ async function rigeneraFullResSilente(mazzo) {
 
         await localforage.setItem(CUSTOM_KEY, mazzo);
         await aggiornaListaCustom();
-        if (_regenCount % 15 === 0) {
-        sync(true);
-        if (_currentUser) {
-          const signalRef = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo_signal');
-          setDoc(signalRef, { t: Date.now() }).catch(() => {});
+        if (_regenCount % 15 === 0 && _currentUser) {
+        // Scrivi i chunk parziali direttamente senza passare per sync()
+        // (sync() potrebbe essere già in esecuzione con _syncBusy=true)
+        try {
+          const base = (id) => doc(db, 'users', _currentUser.uid, 'backup', id);
+          const now = Date.now();
+          // Comprimi e scrivi solo le carte già ridisegnate fino a questo punto
+          const mazzoFinora = mazzo.filter(c => c.fullRes && c.img);
+          const carteCloud = mazzoFinora.map(c => {
+            const { _inModifica, fullRes, img, ...rest } = c;
+            return { ...JSON.parse(JSON.stringify(rest)), img: null };
+          });
+          const CHUNK_LIMIT = 700 * 1024;
+          const chunks = [];
+          let chunkCorrente = [], pesoCorrente = 0;
+          for (const carta of carteCloud) {
+            const peso = (carta.img || '').length;
+            if (chunkCorrente.length > 0 && pesoCorrente + peso > CHUNK_LIMIT) {
+              chunks.push(chunkCorrente); chunkCorrente = []; pesoCorrente = 0;
+            }
+            chunkCorrente.push(carta); pesoCorrente += peso;
+          }
+          if (chunkCorrente.length > 0) chunks.push(chunkCorrente);
+          // Scrivi meta e chunk
+          await setDoc(base('mazzo_meta'), { aggiornato: now, chunks: chunks.length }, { merge: true });
+          for (let i = 0; i < chunks.length; i++) {
+            await setDoc(base('mazzo_chunk_' + i), { carte: chunks[i] });
+          }
+          // Notifica altri browser
+          await setDoc(base('mazzo_signal'), { t: now }).catch(() => {});
           localStorage.setItem('porky_last_signal_hash', '');
+          localStorage.setItem('porky_last_cloud_read', String(now));
+        } catch(e) {
+          console.warn('sync parziale ogni 15 carte fallita:', e);
         }
       }
       } catch(e) {
