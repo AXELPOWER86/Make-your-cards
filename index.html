@@ -772,7 +772,7 @@ async function mergeMazzi({ locale, cloud, deleted }) {
 async function rigeneraFullResSilente(mazzo) {
   let modificato = false;
 
-  const daRigenerare = mazzo.filter(c => c.testo && c.testo.trim() && (!c.fullRes || !imgSembraValida(c.img)));
+  const daRigenerare = mazzo.filter(c => c.testo && c.testo.trim() && !c.fullRes);
   if (!daRigenerare.length) return { mazzo, modificato };
 
   // Salva lo stato attuale dell'editor per ripristinarlo alla fine
@@ -782,7 +782,7 @@ async function rigeneraFullResSilente(mazzo) {
   try {
     for (let i = 0; i < mazzo.length; i++) {
       const carta = mazzo[i];
-      if ((carta.fullRes && imgSembraValida(carta.img)) || !carta.testo || !carta.testo.trim()) continue;
+      if (carta.fullRes || !carta.testo || !carta.testo.trim()) continue;
 
       try {
         // Scrivi il testo nel DOM visibile esattamente come fa l'utente
@@ -825,10 +825,6 @@ async function rigeneraFullResSilente(mazzo) {
   return { mazzo, modificato };
 }
  
-function imgSembraValida(img) {
-  return img && img.length > 500;
-}
-
 async function sync(silenzioso = true) {
   if (!_currentUser) return;
 
