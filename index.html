@@ -1896,13 +1896,18 @@ window.addEventListener('load', async () => {
   });
  
   if (!auth.currentUser) {
-    await aggiornaListaCustom();
-    const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
-    if (mazzo.length === 0) {
+  await aggiornaListaCustom();
+  const mazzo = await localforage.getItem(CUSTOM_KEY) || [];
+  if (mazzo.length === 0) {
+    // Aspetta un attimo: se arriva una notifica cloud nel frattempo, non chiedere
+    await new Promise(r => setTimeout(r, 3000));
+    const mazzoDopoAttesa = await localforage.getItem(CUSTOM_KEY) || [];
+    if (mazzoDopoAttesa.length === 0) {
       if (await customConfirm({ message: 'Il mazzo è vuoto.\nVuoi importare un Backup Mazzo?', okText: 'SI', cancelText: 'NO' })) {
         document.getElementById('inp-backup').click();
       }
     }
+  }
     // Note: se ci sono carte senza fullRes, sync() le rigenererà al login.
     // Se non loggati, restano con badge ⏳ fino al prossimo accesso.
   }
