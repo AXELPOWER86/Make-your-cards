@@ -777,6 +777,7 @@ async function rigeneraFullResSilente(mazzo) {
 
   // Salva lo stato attuale dell'editor per ripristinarlo alla fine
   const testoOriginale = document.getElementById('inp-body').value;
+  document.getElementById('card-container').style.visibility = 'hidden';
 
   try {
     for (let i = 0; i < mazzo.length; i++) {
@@ -815,6 +816,7 @@ async function rigeneraFullResSilente(mazzo) {
   } finally {
     // Ripristina sempre il testo originale dell'editor
     document.getElementById('inp-body').value = testoOriginale;
+    document.getElementById('card-container').style.visibility = '';
     document.getElementById('card-body-inner').textContent = testoOriginale.toUpperCase();
     if (testoOriginale.trim()) autoFit();
     else document.getElementById('card-body-inner').style.fontSize = '';
@@ -1042,7 +1044,10 @@ function avviaAutoSync() {
   // Ascolta mazzo_signal — documento separato scritto SOLO per notificare
   // altri dispositivi, mai da sync() stessa → nessun loop
   const signalRef = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo_signal');
-  _unsubscribe = onSnapshot(signalRef, () => sync(true));
+  _unsubscribe = onSnapshot(signalRef, () => {
+    localStorage.removeItem('porky_last_cloud_read');
+    sync(true);
+  });
 
   _syncTimer = setInterval(() => {
     if (_currentUser) sync(true);
