@@ -795,6 +795,9 @@ async function rigeneraFullResSilente(mazzo) {
 
         // Cattura con html2canvas sul card-container reale — identico a btn-salva
         const shash  = await sha256String(normalizzaTesto(carta.testo));
+        console.log('card-bg src type:', document.getElementById('card-bg').src.substring(0, 30));
+        console.log('card-bg complete:', document.getElementById('card-bg').complete);
+        console.log('card-bg naturalWidth:', document.getElementById('card-bg').naturalWidth);
         const canvas = await html2canvas(document.getElementById('card-container'), {
           scale: 3, useCORS: true, allowTaint: true,
           backgroundColor: null, logging: false, imageTimeout: 10000
