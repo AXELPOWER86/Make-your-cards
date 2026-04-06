@@ -1566,7 +1566,7 @@ async function aggiornaListaCustom() {
     wrap.className = 'card-item';
  
     const img   = document.createElement('img');
-    img.src = carta.img || 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="54" height="84"><rect width="54" height="84" fill="%23f0d080" rx="4"/><text x="27" y="48" text-anchor="middle" font-size="20">⏳</text></svg>';
+    img.src = carta.img || 'images/clessidra.png';
     img.title   = carta.testo || carta.nome;
     img.style.cursor = 'pointer';
     img.onclick = () => modificaCarta(idx);
