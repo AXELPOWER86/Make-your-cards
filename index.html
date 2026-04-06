@@ -935,13 +935,15 @@ async function sync(silenzioso = true) {
     // ── 4. Merge bidirezionale ──
     const mazzoMerged = await mergeMazzi({ locale, cloud: cloudCarte, deleted });
 
-    // ── 5. Rigenera full-res silente ──
-    const { mazzo: mazzoFinale, modificato } = await rigeneraFullResSilente(mazzoMerged);
-    if (modificato) localStorage.setItem('porky_last_cloud_read', String(now));
-
-    // ── 6. Salva locale ──
+    // ── 5. Salva locale post-merge ──
+    const mazzoFinale = mazzoMerged;
     await localforage.setItem(CUSTOM_KEY, mazzoFinale);
     await aggiornaListaCustom();
+
+    // ── 5b. Rigenera full-res silente (non-blocking, parte dopo il salvataggio) ──
+    rigeneraFullResSilente(mazzoFinale).then(({ modificato }) => {
+      if (modificato) sync(true);
+    });
 
     // ── 7. Indice cloud per evitare ricompressioni inutili ──
     const cloudIndex = new Map(cloudCarte.map(c => [c.shash, c.savedAt || 0]));
@@ -1242,6 +1244,7 @@ async function importaDaCommunity(carta) {
  
   await localforage.setItem(CUSTOM_KEY, mazzo);
   await aggiornaListaCustom();
+  await rigeneraFullResSilente(mazzo);
   await sync(true);
   await customAlert('Carta importata nel mazzo!');
 }
@@ -1569,7 +1572,7 @@ async function aggiornaCardNelDom(idx, nuovaImg) {
   const items = lista.querySelectorAll('.card-item');
   if (items[idx]) {
     const imgEl = items[idx].querySelector('img');
-    if (imgEl) imgEl.src = nuovaImg;
+    if (imgEl && nuovaImg) imgEl.src = nuovaImg;
   }
 }
 
@@ -1583,7 +1586,7 @@ async function aggiornaListaCustom() {
     wrap.className = 'card-item';
  
     const img   = document.createElement('img');
-    img.src     = carta.img;
+    img.src = carta.img || 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="54" height="84"><rect width="54" height="84" fill="%23f0d080" rx="4"/><text x="27" y="48" text-anchor="middle" font-size="20">⏳</text></svg>';
     img.title   = carta.testo || carta.nome;
     img.style.cursor = 'pointer';
     img.onclick = () => modificaCarta(idx);
@@ -1770,6 +1773,7 @@ document.getElementById('inp-backup').addEventListener('change', async event => 
         const mazzoFinale = await mergeMazzi({ locale: datiSanati, cloud: [], deleted: {} });
         await localforage.setItem(CUSTOM_KEY, mazzoFinale);
         await aggiornaListaCustom();
+        await rigeneraFullResSilente(mazzoFinale);
         await sync(true);
         await customAlert('Mazzo sostituito: ' + mazzoFinale.length + ' carte importate.');
       } else {
@@ -1777,6 +1781,7 @@ document.getElementById('inp-backup').addEventListener('change', async event => 
         const nuove       = mazzoFinale.length - esistente.length;
         await localforage.setItem(CUSTOM_KEY, mazzoFinale);
         await aggiornaListaCustom();
+        await rigeneraFullResSilente(mazzoFinale);
         await sync(true);
         await customAlert('Importate ' + nuove + ' carte nuove, ' + (datiSanati.length - nuove) + ' duplicate ignorate.');
       }
@@ -1784,6 +1789,7 @@ document.getElementById('inp-backup').addEventListener('change', async event => 
       const mazzoFinale = await mergeMazzi({ locale: datiSanati, cloud: [], deleted: {} });
       await localforage.setItem(CUSTOM_KEY, mazzoFinale);
       await aggiornaListaCustom();
+      await rigeneraFullResSilente(mazzoFinale);
       await sync(true);
       await customAlert('Backup importato: ' + mazzoFinale.length + ' carte.');
     }
