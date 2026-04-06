@@ -824,10 +824,9 @@ async function rigeneraFullResSilente(mazzo) {
     }
   } finally {
     // Ripristina sempre il testo originale dell'editor
-    document.getElementById('inp-body').value = testoOriginale;
-    document.getElementById('card-body-inner').textContent = testoOriginale.toUpperCase();
-    if (testoOriginale.trim()) autoFit();
-    else document.getElementById('card-body-inner').style.fontSize = '';
+    document.getElementById('inp-body').value = '';
+    document.getElementById('card-body-inner').textContent = '';
+    document.getElementById('card-body-inner').style.fontSize = '';
   }
 
   return { mazzo, modificato };
