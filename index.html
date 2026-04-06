@@ -786,13 +786,14 @@ async function rigeneraFullResSilente(mazzo) {
 
   // Carica lo stesso sfondo del card-bg originale nel clone
   const bgSrc = document.getElementById('card-bg').src;
+  console.log('bgSrc is dataURL:', bgSrc.startsWith('data:'));
   clone.querySelector('#card-bg').id  = 'card-bg-offscreen';
   clone.querySelector('#card-bg-offscreen').src = bgSrc;
   await new Promise(resolve => {
     const bgEl = clone.querySelector('#card-bg-offscreen');
-    if (bgEl.complete) { resolve(); return; }
     bgEl.onload = resolve;
     bgEl.onerror = resolve;
+    bgEl.src = bgSrc;
   });
   const innerClone = clone.querySelector('#card-body-inner');
   innerClone.id = 'card-body-inner-offscreen';
@@ -809,8 +810,10 @@ async function rigeneraFullResSilente(mazzo) {
         await new Promise(r => document.fonts.ready.then(r));
 
         // autoFit sul clone
-        const maxH = bodyClone.clientHeight;
-        const maxW = bodyClone.clientWidth - 4;
+        await new Promise(r => requestAnimationFrame(r));
+        const maxH = bodyClone.clientHeight || clone.clientHeight * 0.88;
+        const maxW = (bodyClone.clientWidth || clone.clientWidth * 0.84) - 4;
+        console.log('maxH:', maxH, 'maxW:', maxW);
         let lo = 8, hi = 300, best = 8;
         while (lo <= hi) {
           const mid = Math.floor((lo + hi) / 2);
@@ -820,7 +823,7 @@ async function rigeneraFullResSilente(mazzo) {
           else { hi = mid - 1; }
         }
         innerClone.style.fontSize = best + 'px';
-        await new Promise(r => requestAnimationFrame(r));
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
         const shash  = await sha256String(normalizzaTesto(carta.testo));
         const canvas = await html2canvas(clone, {
