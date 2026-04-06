@@ -403,6 +403,16 @@ input[type="file"] { display: none; }
     <h2>✏️ Testo della carta</h2>
     <div>
       <label for="inp-body">Scrivi il testo:</label>
+      <div style="display:flex;gap:6px;margin-bottom:4px;">
+        <button onclick="setColoreCarта('standard')" title="Colore standard"
+          style="width:28px;height:28px;border-radius:50%;background:#f5e6c8;border:2px solid #502369;cursor:pointer;font-size:10px;font-weight:bold;color:#502369;padding:0;">St</button>
+        <button onclick="setColoreCarта('black')" title="Nero"
+          style="width:28px;height:28px;border-radius:50%;background:#111;border:2px solid #502369;cursor:pointer;"></button>
+        <button onclick="setColoreCarта('red')" title="Rosso"
+          style="width:28px;height:28px;border-radius:50%;background:#c0392b;border:2px solid #502369;cursor:pointer;"></button>
+        <button onclick="setColoreCarта('blue')" title="Blu"
+          style="width:28px;height:28px;border-radius:50%;background:#1a5a8a;border:2px solid #502369;cursor:pointer;"></button>
+      </div>
       <textarea id="inp-body" style="text-align:center;"
         placeholder="&#10;&#10;&#10;SCRIVI IL TESTO DELLA CARTA&#10;QUI"></textarea>
       <div class="hint"><br>Il testo si adatta automaticamente alle dimensioni della carta</div>
@@ -687,6 +697,17 @@ async function sha256String(str) {
   const digest = await crypto.subtle.digest('SHA-256', buf);
   return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2,'0')).join('');
 }
+
+function setColoreCarта(colore) {
+  const inner = document.getElementById('card-body-inner');
+  const map = {
+    'standard': '#f5e6c8',
+    'black':    '#111111',
+    'red':      '#c0392b',
+    'blue':     '#1a5a8a'
+  };
+  inner.style.color = map[colore] || '#f5e6c8';
+}
  
 async function garantisciShash(carta) {
   if (carta.shash && carta.shash.trim()) return carta;
@@ -818,13 +839,13 @@ async function rigeneraFullResSilente(mazzo) {
         await localforage.setItem(CUSTOM_KEY, mazzo);
         await aggiornaListaCustom();
         if (_regenCount % 15 === 0) {
-          sync(true);
-          // Notifica subito gli altri browser senza aspettare la fine di sync
-          if (_currentUser) {
-            const signalRef = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo_signal');
-            setDoc(signalRef, { t: Date.now() }).catch(() => {});
-          }
+        sync(true);
+        if (_currentUser) {
+          const signalRef = doc(db, 'users', _currentUser.uid, 'backup', 'mazzo_signal');
+          setDoc(signalRef, { t: Date.now() }).catch(() => {});
+          localStorage.setItem('porky_last_signal_hash', '');
         }
+      }
       } catch(e) {
         console.warn('rigeneraFullRes: errore su carta', carta.testo, e);
       }
