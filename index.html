@@ -781,7 +781,7 @@ async function rigeneraFullResSilente(mazzo) {
   const originale = document.getElementById('card-container');
   const clone = originale.cloneNode(true);
   clone.id = 'card-container-offscreen';
-  clone.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:360px;pointer-events:none;visibility:hidden;';
+  clone.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:360px;pointer-events:none;';
   document.body.appendChild(clone);
 
   // Carica lo stesso sfondo del card-bg originale nel clone
