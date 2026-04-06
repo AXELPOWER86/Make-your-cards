@@ -772,32 +772,11 @@ async function mergeMazzi({ locale, cloud, deleted }) {
 async function rigeneraFullResSilente(mazzo) {
   let modificato = false;
 
-  // Carte da rigenerare: tutte quelle senza fullRes (indipendentemente da img)
-  // Le carte da backup JSON hanno img ma fullRes assente/false → vanno ridisegnate
   const daRigenerare = mazzo.filter(c => c.testo && c.testo.trim() && !c.fullRes);
   if (!daRigenerare.length) return { mazzo, modificato };
 
-  // Crea un clone nascosto di card-container fuori schermo
-  const originale = document.getElementById('card-container');
-  const clone = originale.cloneNode(true);
-  clone.id = 'card-container-offscreen';
-  clone.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:360px;pointer-events:none;';
-  document.body.appendChild(clone);
-
-  // Carica lo stesso sfondo del card-bg originale nel clone
-  const bgSrc = document.getElementById('card-bg').src;
-  console.log('bgSrc is dataURL:', bgSrc.startsWith('data:'));
-  clone.querySelector('#card-bg').id  = 'card-bg-offscreen';
-  clone.querySelector('#card-bg-offscreen').src = bgSrc;
-  await new Promise(resolve => {
-    const bgEl = clone.querySelector('#card-bg-offscreen');
-    bgEl.onload = resolve;
-    bgEl.onerror = resolve;
-    bgEl.src = bgSrc;
-  });
-  const innerClone = clone.querySelector('#card-body-inner');
-  innerClone.id = 'card-body-inner-offscreen';
-  const bodyClone  = clone.querySelector('#card-body');
+  // Salva lo stato attuale dell'editor per ripristinarlo alla fine
+  const testoOriginale = document.getElementById('inp-body').value;
 
   try {
     for (let i = 0; i < mazzo.length; i++) {
@@ -805,28 +784,16 @@ async function rigeneraFullResSilente(mazzo) {
       if (carta.fullRes || !carta.testo || !carta.testo.trim()) continue;
 
       try {
-        // Scrivi testo nel clone, mai nel DOM visibile
-        innerClone.textContent = carta.testo.toUpperCase();
+        // Scrivi il testo nel DOM visibile esattamente come fa l'utente
+        document.getElementById('inp-body').value = carta.testo;
+        document.getElementById('card-body-inner').textContent = carta.testo.toUpperCase();
         await new Promise(r => document.fonts.ready.then(r));
-
-        // autoFit sul clone
+        autoFit();
         await new Promise(r => requestAnimationFrame(r));
-        const maxH = bodyClone.clientHeight || clone.clientHeight * 0.88;
-        const maxW = (bodyClone.clientWidth || clone.clientWidth * 0.84) - 4;
-        console.log('maxH:', maxH, 'maxW:', maxW);
-        let lo = 8, hi = 300, best = 8;
-        while (lo <= hi) {
-          const mid = Math.floor((lo + hi) / 2);
-          innerClone.style.fontSize = mid + 'px';
-          void innerClone.offsetHeight;
-          if (innerClone.scrollHeight <= maxH && innerClone.scrollWidth <= maxW + 4) { best = mid; lo = mid + 1; }
-          else { hi = mid - 1; }
-        }
-        innerClone.style.fontSize = best + 'px';
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
+        // Cattura con html2canvas sul card-container reale — identico a btn-salva
         const shash  = await sha256String(normalizzaTesto(carta.testo));
-        const canvas = await html2canvas(clone, {
+        const canvas = await html2canvas(document.getElementById('card-container'), {
           scale: 3, useCORS: true, allowTaint: true,
           backgroundColor: null, logging: false, imageTimeout: 10000
         });
@@ -838,8 +805,6 @@ async function rigeneraFullResSilente(mazzo) {
         mazzo[i] = { ...carta, img: fullRes, shash, fullRes: true, savedAt: Date.now() };
         modificato = true;
 
-        // Salva e aggiorna solo la thumbnail di questa carta nel DOM,
-        // senza ricostruire tutta la lista (evita reflow e freeze)
         await localforage.setItem(CUSTOM_KEY, mazzo);
         await aggiornaListaCustom();
 
@@ -848,12 +813,12 @@ async function rigeneraFullResSilente(mazzo) {
       }
     }
   } finally {
-    // Rimuovi sempre il clone, anche in caso di errore
-    document.body.removeChild(clone);
+    // Ripristina sempre il testo originale dell'editor
+    document.getElementById('inp-body').value = testoOriginale;
+    document.getElementById('card-body-inner').textContent = testoOriginale.toUpperCase();
+    if (testoOriginale.trim()) autoFit();
+    else document.getElementById('card-body-inner').style.fontSize = '';
   }
-
-  // Aggiorna la lista completa una sola volta alla fine
-  if (modificato) await aggiornaListaCustom();
 
   return { mazzo, modificato };
 }
