@@ -1467,7 +1467,7 @@ function arrayBufferToBase64(buffer) {
  
 async function generaCanvas() {
   return await html2canvas(document.getElementById('card-container'), {
-    scale: 1, useCORS: true, allowTaint: true,
+    scale: 2, useCORS: true, allowTaint: true,
     backgroundColor: null, logging: false, imageTimeout: 10000
   });
 }
